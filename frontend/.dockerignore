@@ -1,0 +1,21 @@
+# Node dependencies (reinstalled in image)
+node_modules/
+
+# Build output
+dist/
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Local env files
+.env
+*.env
+
+# Docker artifacts
+Dockerfile
+docker-compose.yaml

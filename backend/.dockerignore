@@ -1,0 +1,37 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+.venv-1/
+venv/
+env/
+
+# Compiled migrations (keep source only)
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Local env files
+.env
+*.env
+
+# Images / test artifacts
+*.png
+*.jpg
+*.jpeg
+
+# Docker compose (not needed inside image)
+docker-compose.yaml
+Dockerfile
+
+# AI assets (large, external)
+ai_assets/

@@ -1,0 +1,130 @@
+version: '3.9'
+
+# =============================================================
+# Unified Docker Compose — Tomato Monitoring Platform
+# Traefik reverse proxy:
+#   /api/*    → backend  (Django @ port 8000)
+#   /admin/*  → backend  (Django @ port 8000)
+#   /*        → frontend (Vite   @ port 3000)
+# =============================================================
+
+networks:
+  web:
+    driver: bridge
+
+volumes:
+  postgres_data:
+
+services:
+
+  # -----------------------------------------------------------
+  # TRAEFIK — Reverse Proxy
+  # Dashboard: http://localhost:8080
+  # -----------------------------------------------------------
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=web"
+      - "--entrypoints.web.address=:80"
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - web
+
+  # -----------------------------------------------------------
+  # DATABASE — PostgreSQL 15
+  # Preserves original backend/docker-compose.yaml config exactly
+  # -----------------------------------------------------------
+  db:
+    image: postgres:15
+    container_name: tomato_db
+    restart: always
+    environment:
+      POSTGRES_DB: tomato_db
+      POSTGRES_USER: tomato_user
+      POSTGRES_PASSWORD: tomato_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - web
+
+  # -----------------------------------------------------------
+  # BACKEND — Django (port 8000)
+  # Traefik routes: /api and /admin
+  # Higher priority (10) so it wins before the frontend catch-all
+  # -----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tomato_backend
+    restart: unless-stopped
+    environment:
+      DJANGO_SECRET_KEY: django-insecure-change-me-please-replace-this-secret
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend,traefik"
+      POSTGRES_DB: tomato_db
+      POSTGRES_USER: tomato_user
+      POSTGRES_PASSWORD: tomato_pass
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+    depends_on:
+      - db
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+
+      # ---------- /api/** → backend ----------
+      - "traefik.http.routers.backend-api.rule=PathPrefix(`/api`)"
+      - "traefik.http.routers.backend-api.entrypoints=web"
+      - "traefik.http.routers.backend-api.priority=10"
+      - "traefik.http.routers.backend-api.service=backend-svc"
+
+      # ---------- /admin/** → backend ----------
+      - "traefik.http.routers.backend-admin.rule=PathPrefix(`/admin`)"
+      - "traefik.http.routers.backend-admin.entrypoints=web"
+      - "traefik.http.routers.backend-admin.priority=10"
+      - "traefik.http.routers.backend-admin.service=backend-svc"
+
+      # ---------- backend service definition ----------
+      - "traefik.http.services.backend-svc.loadbalancer.server.port=8000"
+
+  # -----------------------------------------------------------
+  # FRONTEND — Vite React (port 3000)
+  # Traefik route: catch-all /  (priority=1, lowest)
+  # Volumes provide hot reload without rebuilding
+  # -----------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tomato_frontend
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+
+      # ---------- /** → frontend (catch-all, lowest priority) ----------
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.routers.frontend.service=frontend-svc"
+
+      # ---------- frontend service definition ----------
+      - "traefik.http.services.frontend-svc.loadbalancer.server.port=3000"
