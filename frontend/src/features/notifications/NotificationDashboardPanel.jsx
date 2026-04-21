@@ -118,17 +118,32 @@ function DiseaseAlertPreview({ notification, onOpen }) {
   const inspectionReference = notification.payload?.source_message_id || notification.inspection;
   const isUnread = !notification.is_read;
   const diseaseLabel = formatDiseaseLabel(notification.display_disease_label || notification.title);
+  const severityTone = isUnread
+    ? notification.severity === 'high' ? 'critical' : 'alert'
+    : 'neutral';
+  const severityLabel = notification.severity === 'high'
+    ? (isUnread ? 'High alert' : 'High')
+    : 'Alert';
 
   return (
     <Card
       variant="outlined"
       sx={{
         borderRadius: 1.25,
-        borderColor: isUnread ? 'error.light' : 'divider',
-        bgcolor: isUnread ? 'rgba(255, 255, 255, 0.92)' : 'rgba(255, 255, 255, 0.72)',
+        borderColor: isUnread ? 'error.main' : 'rgba(15, 23, 42, 0.12)',
+        bgcolor: isUnread ? 'rgba(255, 245, 245, 0.96)' : 'rgba(15, 23, 42, 0.04)',
+        boxShadow: isUnread ? '0 6px 18px rgba(211, 47, 47, 0.08)' : 'none',
+        transition: 'border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease',
       }}
     >
-      <CardActionArea onClick={() => onOpen(notification)}>
+      <CardActionArea
+        onClick={() => onOpen(notification)}
+        sx={{
+          '&:hover': {
+            bgcolor: isUnread ? 'rgba(211, 47, 47, 0.04)' : 'rgba(15, 23, 42, 0.02)',
+          },
+        }}
+      >
         <CardContent sx={{ p: 1.1, '&:last-child': { pb: 1.1 } }}>
           <Stack spacing={0.7}>
             <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="flex-start">
@@ -148,8 +163,8 @@ function DiseaseAlertPreview({ notification, onOpen }) {
               <Stack spacing={0.45} alignItems="flex-end">
                 <StatusChip
                   size="small"
-                  tone={notification.severity === 'high' ? 'critical' : 'alert'}
-                  label={notification.severity === 'high' ? 'High alert' : 'Alert'}
+                  tone={severityTone}
+                  label={severityLabel}
                 />
                 <StatusChip
                   size="small"
