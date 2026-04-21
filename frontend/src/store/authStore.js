@@ -1,65 +1,117 @@
+import axios from 'axios'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-/**
- * Auth store — manages authentication state across the app.
- *
- * State:
- *   user            — current user object from GET /api/v1/auth/me/
- *                     shape: { id, username, email, first_name, last_name, role }
- *   accessToken     — JWT access token (persisted in localStorage)
- *   isAuthenticated — derived boolean, true when accessToken is present
- *
- * Actions:
- *   setAuth(user, token) — called after a successful login or token refresh
- *   logout()             — clears all auth state and removes token from storage
- */
 const useAuthStore = create(
   persist(
-    (set) => ({
-      // ── State ──────────────────────────────────────────────
+    (set, get) => ({
       user: null,
       accessToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      isAuthReady: false,
+      isRestoring: false,
+      hasHydrated: false,
 
-      // ── Actions ────────────────────────────────────────────
-
-      /**
-       * setAuth — store the authenticated user and access token.
-       * Called after POST /api/v1/auth/login/ or POST /api/v1/auth/refresh/
-       *
-       * @param {object} user  - user object from GET /api/v1/auth/me/
-       * @param {string} token - JWT access token string
-       */
       setAuth: (user, accessToken, refreshToken) =>
         set((state) => ({
           user,
           accessToken,
           refreshToken: refreshToken || state.refreshToken,
-          isAuthenticated: true,
+          isAuthenticated: Boolean(user && accessToken),
+          isAuthReady: true,
+          isRestoring: false,
         })),
 
-      /**
-       * logout — clear all auth state.
-       * The persist middleware automatically removes the stored key from localStorage.
-       */
-      logout: () =>
+      setHydrated: () =>
+        set({
+          hasHydrated: true,
+        }),
+
+      clearAuth: () =>
         set({
           user: null,
           accessToken: null,
           refreshToken: null,
           isAuthenticated: false,
+          isAuthReady: true,
+          isRestoring: false,
         }),
-    }),
 
+      restoreSession: async () => {
+        const { accessToken, refreshToken, isRestoring, clearAuth, setAuth } = get()
+
+        if (isRestoring) {
+          return
+        }
+
+        if (!accessToken && !refreshToken) {
+          clearAuth()
+          return
+        }
+
+        set({
+          isRestoring: true,
+          isAuthReady: false,
+        })
+
+        try {
+          let activeAccessToken = accessToken
+
+          if (activeAccessToken) {
+            try {
+              const { data: user } = await axios.get('/api/v1/auth/me/', {
+                headers: {
+                  Authorization: `Bearer ${activeAccessToken}`,
+                },
+              })
+
+              setAuth(user, activeAccessToken, refreshToken)
+              return
+            } catch {
+              activeAccessToken = null
+            }
+          }
+
+          if (!refreshToken) {
+            clearAuth()
+            return
+          }
+
+          const { data: refreshData } = await axios.post('/api/v1/auth/refresh/', {
+            refresh: refreshToken,
+          })
+
+          activeAccessToken = refreshData.access
+
+          const { data: user } = await axios.get('/api/v1/auth/me/', {
+            headers: {
+              Authorization: `Bearer ${activeAccessToken}`,
+            },
+          })
+
+          setAuth(user, activeAccessToken, refreshToken)
+        } catch {
+          clearAuth()
+        }
+      },
+
+      logout: () => get().clearAuth(),
+    }),
     {
-      name: 'auth-storage',        // localStorage key
-      partialize: (state) => ({    // only persist tokens and auth status, not the full user object
+      name: 'auth-storage',
+      partialize: (state) => ({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
-        isAuthenticated: state.isAuthenticated,
       }),
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          state?.clearAuth()
+          return
+        }
+
+        state?.setHydrated()
+      },
     },
   ),
 )

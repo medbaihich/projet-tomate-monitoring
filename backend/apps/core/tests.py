@@ -49,7 +49,7 @@ class InspectionReviewFlowTests(APITestCase):
         self.healthy_disease = Disease.objects.get(name="Healthy")
         self.corrected_disease = Disease.objects.get(name="Early Blight")
 
-    def test_create_inspection_with_matches_and_review(self):
+    def create_inspection(self, *, predicted_disease=None, top1_label="Healthy"):
         timestamp = timezone.now().replace(microsecond=0)
 
         inspection_response = self.client.post(
@@ -57,12 +57,14 @@ class InspectionReviewFlowTests(APITestCase):
             data={
                 "device": str(self.device.id),
                 "inference_index": str(self.leaf_index.id),
-                "predicted_disease": str(self.healthy_disease.id),
+                "predicted_disease": (
+                    str(predicted_disease.id) if predicted_disease is not None else None
+                ),
                 "organ_type": "leaf",
                 "status": Inspection.Status.NEW,
                 "processing_status": Inspection.ProcessingStatus.COMPLETED,
-                "source_message_id": "demo-message-001",
-                "top1_label": "Healthy",
+                "source_message_id": f"demo-message-{timestamp.timestamp()}",
+                "top1_label": top1_label,
                 "confidence_score": 0.97,
                 "captured_at": timestamp.isoformat(),
                 "received_at": timestamp.isoformat(),
@@ -89,9 +91,10 @@ class InspectionReviewFlowTests(APITestCase):
         )
 
         self.assertEqual(inspection_response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(len(inspection_response.data["matches"]), 2)
+        return Inspection.objects.get(pk=inspection_response.data["id"])
 
-        inspection = Inspection.objects.get(pk=inspection_response.data["id"])
+    def test_create_corrected_review_updates_inspection_prediction_and_status(self):
+        inspection = self.create_inspection(predicted_disease=self.healthy_disease)
         self.assertEqual(inspection.device, self.device)
         self.assertEqual(inspection.inference_index, self.leaf_index)
         self.assertEqual(inspection.predicted_disease, self.healthy_disease)
@@ -120,3 +123,48 @@ class InspectionReviewFlowTests(APITestCase):
         self.assertEqual(review.inspection, inspection)
         self.assertEqual(review.reviewer, self.user)
         self.assertEqual(review.corrected_disease, self.corrected_disease)
+
+        inspection.refresh_from_db()
+        self.assertEqual(inspection.status, Inspection.Status.REVIEWED)
+        self.assertEqual(inspection.predicted_disease, self.corrected_disease)
+        self.assertEqual(inspection.top1_label, self.corrected_disease.name)
+
+    def test_create_accepted_review_marks_inspection_reviewed_without_changing_prediction(self):
+        inspection = self.create_inspection(predicted_disease=self.healthy_disease)
+
+        review_response = self.client.post(
+            reverse("review-list"),
+            data={
+                "inspection": str(inspection.id),
+                "decision": Review.Decision.ACCEPTED,
+                "comments": "Prediction accepted.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(review_response.status_code, status.HTTP_201_CREATED)
+
+        inspection.refresh_from_db()
+        self.assertEqual(inspection.status, Inspection.Status.REVIEWED)
+        self.assertEqual(inspection.predicted_disease, self.healthy_disease)
+        self.assertEqual(inspection.top1_label, "Healthy")
+
+    def test_create_rejected_review_marks_inspection_reviewed_without_changing_prediction(self):
+        inspection = self.create_inspection(predicted_disease=self.healthy_disease)
+
+        review_response = self.client.post(
+            reverse("review-list"),
+            data={
+                "inspection": str(inspection.id),
+                "decision": Review.Decision.REJECTED,
+                "comments": "Prediction rejected after review.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(review_response.status_code, status.HTTP_201_CREATED)
+
+        inspection.refresh_from_db()
+        self.assertEqual(inspection.status, Inspection.Status.REVIEWED)
+        self.assertEqual(inspection.predicted_disease, self.healthy_disease)
+        self.assertEqual(inspection.top1_label, "Healthy")

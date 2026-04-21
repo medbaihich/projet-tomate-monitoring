@@ -1,22 +1,19 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Box, Typography } from '@mui/material';
+import { useEffect } from 'react';
+import AdminRoute from '@/components/AdminRoute';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import AccountPage from '@/features/account/AccountPage';
+import CatalogPage from '@/features/catalog/CatalogPage';
+import DashboardPage from '@/features/dashboard/DashboardPage';
 import MainLayout from '@/layouts/MainLayout';
+import DevicesPage from '@/features/devices/DevicesPage';
+import InspectionsPage from '@/features/inspections/InspectionsPage';
 import Login from '@/features/auth/Login';
+import MonitoringPage from '@/features/monitoring/MonitoringPage';
+import ReviewPage from '@/features/review/ReviewPage';
+import useAuthStore from '@/store/authStore';
 
-// Placeholder components
-function DashboardPlaceholder() {
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-      <Typography variant="h4" sx={{ fontWeight: 600 }}>
-        Dashboard — Protected Area
-      </Typography>
-    </Box>
-  );
-}
-
-// React Query Client setup
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -27,27 +24,45 @@ const queryClient = new QueryClient({
   },
 });
 
+function AuthBootstrap() {
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
+  const isAuthReady = useAuthStore((state) => state.isAuthReady);
+  const isRestoring = useAuthStore((state) => state.isRestoring);
+  const restoreSession = useAuthStore((state) => state.restoreSession);
+
+  useEffect(() => {
+    if (!hasHydrated || isAuthReady || isRestoring) {
+      return;
+    }
+
+    restoreSession();
+  }, [hasHydrated, isAuthReady, isRestoring, restoreSession]);
+
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <AuthBootstrap />
       <Routes>
-        {/* Public routes */}
         <Route path="/login" element={<Login />} />
 
-        {/* Protected routes wrapped inside ProtectedRoute */}
         <Route element={<ProtectedRoute />}>
           <Route element={<MainLayout />}>
-            <Route path="/dashboard" element={<DashboardPlaceholder />} />
-            <Route path="/review" element={<Box sx={{p: 2}}><Typography variant="h4">Review</Typography></Box>} />
-            <Route path="/devices" element={<Box sx={{p: 2}}><Typography variant="h4">Devices</Typography></Box>} />
-            <Route path="/catalog" element={<Box sx={{p: 2}}><Typography variant="h4">Catalog</Typography></Box>} />
-            
-            {/* Default route redirect to dashboard */}
+            <Route path="/account" element={<AccountPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route element={<AdminRoute />}>
+              <Route path="/monitoring" element={<MonitoringPage />} />
+            </Route>
+            <Route path="/inspections" element={<InspectionsPage />} />
+            <Route path="/review" element={<ReviewPage />} />
+            <Route path="/devices" element={<DevicesPage />} />
+            <Route path="/catalog" element={<CatalogPage />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Route>
 
-        {/* Catch-all route to handle 404s */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </QueryClientProvider>

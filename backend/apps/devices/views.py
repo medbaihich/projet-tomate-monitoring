@@ -1,6 +1,6 @@
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
 
+from apps.accounts.permissions import IsAuthenticatedReadOnlyOrAdminWrite
 from apps.core.api import apply_query_filters
 from apps.devices.models import Device, Greenhouse, Site, Zone
 from apps.devices.serializers import (
@@ -16,7 +16,7 @@ class SiteViewSet(viewsets.ModelViewSet):
         "greenhouses__zones__devices",
     )
     serializer_class = SiteSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedReadOnlyOrAdminWrite]
     search_fields = ("name", "location")
     ordering_fields = ("name", "location", "created_at", "updated_at")
 
@@ -28,7 +28,7 @@ class SiteViewSet(viewsets.ModelViewSet):
 class GreenhouseViewSet(viewsets.ModelViewSet):
     queryset = Greenhouse.objects.select_related("site").prefetch_related("zones__devices")
     serializer_class = GreenhouseSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedReadOnlyOrAdminWrite]
     search_fields = ("name", "description", "site__name")
     ordering_fields = ("name", "created_at", "updated_at")
 
@@ -40,7 +40,7 @@ class GreenhouseViewSet(viewsets.ModelViewSet):
 class ZoneViewSet(viewsets.ModelViewSet):
     queryset = Zone.objects.select_related("greenhouse", "greenhouse__site").prefetch_related("devices")
     serializer_class = ZoneSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedReadOnlyOrAdminWrite]
     search_fields = ("name", "description", "greenhouse__name", "greenhouse__site__name")
     ordering_fields = ("name", "created_at", "updated_at")
 
@@ -59,7 +59,7 @@ class ZoneViewSet(viewsets.ModelViewSet):
 class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related("zone", "zone__greenhouse", "zone__greenhouse__site")
     serializer_class = DeviceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedReadOnlyOrAdminWrite]
     search_fields = (
         "name",
         "identifier",

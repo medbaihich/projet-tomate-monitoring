@@ -4,12 +4,15 @@ from apps.review.models import Review
 
 
 class ReviewSerializer(serializers.ModelSerializer):
+    reviewer_summary = serializers.SerializerMethodField()
+
     class Meta:
         model = Review
         fields = (
             "id",
             "inspection",
             "reviewer",
+            "reviewer_summary",
             "corrected_disease",
             "decision",
             "comments",
@@ -17,7 +20,18 @@ class ReviewSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "reviewed_at", "created_at", "updated_at")
+        read_only_fields = ("id", "reviewed_at", "created_at", "updated_at", "reviewer_summary")
+
+    def get_reviewer_summary(self, obj):
+        if obj.reviewer is None:
+            return None
+
+        full_name = obj.reviewer.get_full_name().strip() or obj.reviewer.username
+        return {
+            "id": str(obj.reviewer_id),
+            "username": obj.reviewer.username,
+            "full_name": full_name,
+        }
 
     def validate(self, attrs):
         attrs = super().validate(attrs)

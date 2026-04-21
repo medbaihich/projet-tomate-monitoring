@@ -6,6 +6,7 @@ from apps.catalog.models import Disease
 from apps.devices.models import Device
 from apps.inference.models import InferenceIndex
 from apps.inspections.models import Inspection, InspectionMatch
+from apps.notifications.services import maybe_create_disease_alert_notification
 
 
 def create_inspection_with_matches(*, inspection_data, matches_data=None):
@@ -60,7 +61,7 @@ def create_inspection_with_matches(*, inspection_data, matches_data=None):
         if match_instances:
             InspectionMatch.objects.bulk_create(match_instances)
 
-    return (
+    inspection = (
         Inspection.objects.select_related(
             "device",
             "inference_index",
@@ -69,6 +70,10 @@ def create_inspection_with_matches(*, inspection_data, matches_data=None):
         .prefetch_related("matches__disease")
         .get(pk=inspection.pk)
     )
+
+    maybe_create_disease_alert_notification(inspection)
+
+    return inspection
 
 
 def _get_required_instance(model_class, value, field_name):

@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -24,14 +25,20 @@ def create_review(*, review_data, default_reviewer=None):
         "corrected_disease",
     )
 
-    review = Review.objects.create(
-        inspection=inspection,
-        reviewer=reviewer,
-        corrected_disease=corrected_disease,
-        decision=review_data["decision"],
-        comments=review_data.get("comments", ""),
-        reviewed_at=review_data.get("reviewed_at") or timezone.now(),
-    )
+    with transaction.atomic():
+        review = Review.objects.create(
+            inspection=inspection,
+            reviewer=reviewer,
+            corrected_disease=corrected_disease,
+            decision=review_data["decision"],
+            comments=review_data.get("comments", ""),
+            reviewed_at=review_data.get("reviewed_at") or timezone.now(),
+        )
+        _synchronize_inspection_from_review(
+            inspection=inspection,
+            decision=review.decision,
+            corrected_disease=corrected_disease,
+        )
 
     return (
         Review.objects.select_related(
@@ -55,6 +62,19 @@ def _get_required_instance(model_class, value, field_name):
         return model_class.objects.get(pk=value)
     except model_class.DoesNotExist as exc:
         raise ValidationError({field_name: "Referenced object does not exist."}) from exc
+
+
+def _synchronize_inspection_from_review(*, inspection, decision, corrected_disease):
+    update_fields = {"status", "updated_at"}
+
+    inspection.status = Inspection.Status.REVIEWED
+
+    if decision == Review.Decision.CORRECTED and corrected_disease is not None:
+        inspection.predicted_disease = corrected_disease
+        inspection.top1_label = corrected_disease.name
+        update_fields.update({"predicted_disease", "top1_label"})
+
+    inspection.save(update_fields=sorted(update_fields))
 
 
 def _get_optional_instance(model_class, value, field_name):

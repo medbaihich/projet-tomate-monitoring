@@ -1,6 +1,6 @@
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
 
+from apps.accounts.permissions import IsAuthenticatedReadOnlyOrAdminWrite
 from apps.core.api import apply_query_filters
 from apps.catalog.models import (
     Disease,
@@ -19,7 +19,7 @@ from apps.catalog.serializers import (
 class DiseaseViewSet(viewsets.ModelViewSet):
     queryset = Disease.objects.prefetch_related("causes", "treatments", "resources")
     serializer_class = DiseaseSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedReadOnlyOrAdminWrite]
     search_fields = ("name", "slug", "summary", "symptoms", "prevention")
     ordering_fields = ("name", "created_at", "updated_at")
 
@@ -38,7 +38,7 @@ class DiseaseViewSet(viewsets.ModelViewSet):
 class DiseaseCauseViewSet(viewsets.ModelViewSet):
     queryset = DiseaseCause.objects.select_related("disease")
     serializer_class = DiseaseCauseSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedReadOnlyOrAdminWrite]
     search_fields = ("title", "description", "disease__name")
     ordering_fields = ("title", "created_at", "updated_at")
 
@@ -50,7 +50,7 @@ class DiseaseCauseViewSet(viewsets.ModelViewSet):
 class DiseaseTreatmentViewSet(viewsets.ModelViewSet):
     queryset = DiseaseTreatment.objects.select_related("disease")
     serializer_class = DiseaseTreatmentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedReadOnlyOrAdminWrite]
     search_fields = ("title", "description", "disease__name")
     ordering_fields = ("title", "created_at", "updated_at")
 
@@ -62,7 +62,7 @@ class DiseaseTreatmentViewSet(viewsets.ModelViewSet):
 class DiseaseResourceViewSet(viewsets.ModelViewSet):
     queryset = DiseaseResource.objects.select_related("disease")
     serializer_class = DiseaseResourceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedReadOnlyOrAdminWrite]
     search_fields = ("title", "description", "url", "disease__name")
     ordering_fields = ("title", "created_at", "updated_at")
 

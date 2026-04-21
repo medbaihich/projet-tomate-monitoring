@@ -13,6 +13,10 @@ from apps.inspections.serializers import (
     InspectionMatchSerializer,
     InspectionSerializer,
 )
+from apps.notifications.services import (
+    is_inspection_alert_eligible,
+    maybe_create_disease_alert_notification,
+)
 
 
 class InspectionViewSet(viewsets.ModelViewSet):
@@ -76,6 +80,32 @@ class InspectionViewSet(viewsets.ModelViewSet):
         )
         headers = self.get_success_headers(output_serializer.data)
         return Response(output_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_update(self, serializer):
+        inspection_before_update = (
+            Inspection.objects.select_related(
+                "device",
+                "inference_index",
+                "predicted_disease",
+            )
+            .prefetch_related("matches__disease")
+            .get(pk=serializer.instance.pk)
+        )
+        was_alert_eligible = is_inspection_alert_eligible(inspection_before_update)
+
+        inspection = serializer.save()
+        inspection = (
+            Inspection.objects.select_related(
+                "device",
+                "inference_index",
+                "predicted_disease",
+            )
+            .prefetch_related("matches__disease")
+            .get(pk=inspection.pk)
+        )
+
+        if not was_alert_eligible:
+            maybe_create_disease_alert_notification(inspection)
 
 
 class InspectionMatchViewSet(viewsets.ModelViewSet):

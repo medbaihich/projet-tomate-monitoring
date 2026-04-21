@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django import forms
 
 from apps.inspections.models import Inspection, InspectionMatch
 
@@ -8,8 +9,24 @@ class InspectionMatchInline(admin.TabularInline):
     extra = 0
 
 
+class InspectionAdminForm(forms.ModelForm):
+    class Meta:
+        model = Inspection
+        fields = "__all__"
+        widgets = {
+            "confidence_score": forms.NumberInput(
+                attrs={
+                    "step": "any",
+                    "min": "0",
+                    "max": "1",
+                }
+            )
+        }
+
+
 @admin.register(Inspection)
 class InspectionAdmin(admin.ModelAdmin):
+    form = InspectionAdminForm
     list_display = (
         "device",
         "organ_type",

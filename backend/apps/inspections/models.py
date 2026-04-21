@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from apps.catalog.models import Disease
@@ -49,7 +50,11 @@ class Inspection(UUIDPrimaryKeyModel, TimeStampedModel):
     )
     source_message_id = models.CharField(max_length=255, blank=True, db_index=True)
     top1_label = models.CharField(max_length=255, blank=True)
-    confidence_score = models.FloatField(null=True, blank=True)
+    confidence_score = models.FloatField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(1)],
+    )
     captured_at = models.DateTimeField()
     received_at = models.DateTimeField()
     processed_at = models.DateTimeField(null=True, blank=True)
@@ -57,6 +62,16 @@ class Inspection(UUIDPrimaryKeyModel, TimeStampedModel):
 
     class Meta:
         ordering = ("-captured_at", "-created_at")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(confidence_score__isnull=True)
+                | (
+                    models.Q(confidence_score__gte=0)
+                    & models.Q(confidence_score__lte=1)
+                ),
+                name="inspection_confidence_score_between_0_and_1_or_null",
+            )
+        ]
 
     def clean(self) -> None:
         super().clean()

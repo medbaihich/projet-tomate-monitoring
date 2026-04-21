@@ -23,6 +23,7 @@ class User(UUIDPrimaryKeyModel, TimeStampedModel, AbstractUser):
         null=True,
         blank=True,
     )
+    last_seen_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ("username",)
