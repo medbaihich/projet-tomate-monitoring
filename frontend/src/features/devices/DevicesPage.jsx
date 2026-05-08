@@ -31,19 +31,29 @@ function buildDefaultExpandedItems(sites) {
 
     for (const greenhouse of site.greenhouses) {
       expandedItems.push(`greenhouse:${greenhouse.id}`);
+
+      for (const zone of greenhouse.zones) {
+        expandedItems.push(`zone:${zone.id}`);
+
+        for (const line of zone.lines) {
+          expandedItems.push(`line:${line.id}`);
+        }
+      }
     }
   }
 
   return expandedItems;
 }
 
-function flattenZones(sites) {
+function flattenLines(sites) {
   return sites.flatMap((site) =>
     site.greenhouses.flatMap((greenhouse) =>
-      greenhouse.zones.map((zone) => ({
-        id: zone.id,
-        label: `${site.name} / ${greenhouse.name} / ${zone.name}`,
-      })),
+      greenhouse.zones.flatMap((zone) =>
+        zone.lines.map((line) => ({
+          id: line.id,
+          label: `${site.name} / ${greenhouse.name} / ${zone.name} / ${line.name}`,
+        })),
+      ),
     ),
   );
 }
@@ -52,16 +62,19 @@ function findDeviceWithPath(sites, deviceId) {
   for (const site of sites) {
     for (const greenhouse of site.greenhouses) {
       for (const zone of greenhouse.zones) {
-        const device = zone.devices.find((item) => item.id === deviceId);
-        if (device) {
-          return {
-            device,
-            path: {
-              siteName: site.name,
-              greenhouseName: greenhouse.name,
-              zoneName: zone.name,
-            },
-          };
+        for (const line of zone.lines) {
+          const device = line.devices.find((item) => item.id === deviceId);
+          if (device) {
+            return {
+              device,
+              path: {
+                siteName: site.name,
+                greenhouseName: greenhouse.name,
+                zoneName: zone.name,
+                lineName: line.name,
+              },
+            };
+          }
         }
       }
     }
@@ -89,7 +102,7 @@ export default function DevicesPage() {
   const [expandedItems, setExpandedItems] = useState(null);
 
   const defaultExpandedItems = useMemo(() => buildDefaultExpandedItems(sites), [sites]);
-  const availableZones = useMemo(() => flattenZones(sites), [sites]);
+  const availableLines = useMemo(() => flattenLines(sites), [sites]);
   const visibleExpandedItems = expandedItems ?? defaultExpandedItems;
 
   const selectedItemId = selectedDevice ? `device:${selectedDevice.id}` : null;
@@ -153,7 +166,7 @@ export default function DevicesPage() {
     return (
       <StateBlock
         title="No device hierarchy found"
-        message="The backend returned no sites, greenhouses, zones, or devices yet."
+        message="The backend returned no sites, greenhouses, zones, lines, or devices yet."
         minHeight={280}
       />
     );
@@ -164,7 +177,7 @@ export default function DevicesPage() {
       <PageHeader
         eyebrow="Infrastructure"
         title="Devices"
-        subtitle="Live hierarchy from the devices API: Site -> Greenhouse -> Zone -> Device."
+        subtitle="Live hierarchy from the devices API: Site -> Greenhouse -> Zone -> Line -> Device."
         actions={isAdmin ? (
           <Button
             variant="contained"
@@ -172,7 +185,7 @@ export default function DevicesPage() {
               setCreateDialogSession((currentValue) => currentValue + 1);
               setIsCreateDialogOpen(true);
             }}
-            disabled={availableZones.length === 0}
+            disabled={availableLines.length === 0}
           >
             Add device
           </Button>
@@ -183,7 +196,7 @@ export default function DevicesPage() {
         <Grid size={{ xs: 12, lg: 7 }}>
           <PanelCard
             title="Hierarchy"
-            subtitle="Operational device structure grouped by site, greenhouse, and zone."
+            subtitle="Operational device structure grouped by site, greenhouse, zone, and line."
             badge={`${sites.length} site${sites.length === 1 ? '' : 's'}`}
           >
             <DevicesTree
@@ -210,8 +223,8 @@ export default function DevicesPage() {
         onClose={() => setIsCreateDialogOpen(false)}
         onSubmit={handleCreateDevice}
         isSubmitting={createDeviceMutation.isPending}
-        zones={availableZones}
-        initialZoneId={selectedDevice?.zone || ''}
+        lines={availableLines}
+        initialLineId={selectedDevice?.line || ''}
       />
 
       <Snackbar

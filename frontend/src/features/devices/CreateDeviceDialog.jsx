@@ -49,11 +49,11 @@ export default function CreateDeviceDialog({
   onClose,
   onSubmit,
   isSubmitting,
-  zones,
-  initialZoneId,
+  lines,
+  initialLineId,
 }) {
   const [form, setForm] = useState({
-    zone: initialZoneId || zones[0]?.id || '',
+    line: initialLineId || lines[0]?.id || '',
     name: '',
     identifier: '',
     description: '',
@@ -62,8 +62,8 @@ export default function CreateDeviceDialog({
   const [notice, setNotice] = useState('');
 
   const canSubmit = useMemo(
-    () => Boolean(form.zone && form.name.trim() && form.identifier.trim()),
-    [form.identifier, form.name, form.zone],
+    () => Boolean(form.line && form.name.trim() && form.identifier.trim()),
+    [form.identifier, form.line, form.name],
   );
 
   const handleChange = (event) => {
@@ -81,7 +81,7 @@ export default function CreateDeviceDialog({
 
     try {
       await onSubmit({
-        zone: form.zone,
+        line: form.line,
         name: form.name.trim(),
         identifier: form.identifier.trim(),
         description: form.description.trim(),
@@ -103,14 +103,14 @@ export default function CreateDeviceDialog({
       <DialogContent dividers>
         <Stack spacing={1.5} component="form" onSubmit={handleSubmit} id="create-device-form">
           <Typography variant="body2" color="text.secondary">
-            Register a new operational device directly inside Smart Eye and attach it to an existing zone.
+            Register a new operational device directly inside Smart Eye and attach it to an existing line.
           </Typography>
 
           {notice ? <Alert severity="error">{notice}</Alert> : null}
 
-          {zones.length === 0 ? (
+          {lines.length === 0 ? (
             <Alert severity="warning">
-              A device needs an existing zone first. No zones are currently available in the loaded hierarchy.
+              A device needs an existing line first. No lines are currently available in the loaded hierarchy.
             </Alert>
           ) : null}
 
@@ -120,17 +120,17 @@ export default function CreateDeviceDialog({
                 select
                 fullWidth
                 required
-                label="Zone"
-                name="zone"
-                value={form.zone}
+                label="Line"
+                name="line"
+                value={form.line}
                 onChange={handleChange}
-                error={Boolean(errors.zone)}
-                helperText={errors.zone || ' '}
-                disabled={isSubmitting || zones.length === 0}
+                error={Boolean(errors.line)}
+                helperText={errors.line || ' '}
+                disabled={isSubmitting || lines.length === 0}
               >
-                {zones.map((zone) => (
-                  <MenuItem key={zone.id} value={zone.id}>
-                    {zone.label}
+                {lines.map((line) => (
+                  <MenuItem key={line.id} value={line.id}>
+                    {line.label}
                   </MenuItem>
                 ))}
               </TextField>
@@ -138,7 +138,7 @@ export default function CreateDeviceDialog({
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
-                autoFocus={zones.length > 0}
+                autoFocus={lines.length > 0}
                 required
                 label="Device name"
                 name="name"
@@ -146,7 +146,7 @@ export default function CreateDeviceDialog({
                 onChange={handleChange}
                 error={Boolean(errors.name)}
                 helperText={errors.name || ' '}
-                disabled={isSubmitting || zones.length === 0}
+                disabled={isSubmitting || lines.length === 0}
               />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
@@ -159,7 +159,7 @@ export default function CreateDeviceDialog({
                 onChange={handleChange}
                 error={Boolean(errors.identifier)}
                 helperText={errors.identifier || ' '}
-                disabled={isSubmitting || zones.length === 0}
+                disabled={isSubmitting || lines.length === 0}
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
@@ -173,7 +173,7 @@ export default function CreateDeviceDialog({
                 onChange={handleChange}
                 error={Boolean(errors.description)}
                 helperText={errors.description || ' '}
-                disabled={isSubmitting || zones.length === 0}
+                disabled={isSubmitting || lines.length === 0}
               />
             </Grid>
           </Grid>
@@ -187,7 +187,7 @@ export default function CreateDeviceDialog({
           type="submit"
           form="create-device-form"
           variant="contained"
-          disabled={!canSubmit || isSubmitting || zones.length === 0}
+          disabled={!canSubmit || isSubmitting || lines.length === 0}
         >
           {isSubmitting ? 'Creating...' : 'Create device'}
         </Button>

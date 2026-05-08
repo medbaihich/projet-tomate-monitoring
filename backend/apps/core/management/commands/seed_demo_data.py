@@ -7,7 +7,7 @@ from django.utils.text import slugify
 
 from apps.accounts.models import Role
 from apps.catalog.models import Disease
-from apps.devices.models import Device, Greenhouse, Site, Zone
+from apps.devices.models import Device, Greenhouse, Line, Site, Zone
 from apps.inference.models import InferenceIndex, ModelVersion
 
 
@@ -69,19 +69,27 @@ class Command(BaseCommand):
             name="Zone 1",
             defaults={"description": "Primary demo cultivation zone."},
         )
+        line, _ = Line.objects.get_or_create(
+            zone=zone,
+            code="default",
+            defaults={
+                "name": "Default Line",
+                "description": "Primary demo line.",
+            },
+        )
         device, _ = Device.objects.get_or_create(
             identifier="demo-device-001",
             defaults={
-                "zone": zone,
+                "line": line,
                 "name": "Camera Node 1",
                 "description": "Demo inspection device.",
             },
         )
-        if device.zone_id != zone.id or device.name != "Camera Node 1":
-            device.zone = zone
+        if device.line_id != line.id or device.name != "Camera Node 1":
+            device.line = line
             device.name = "Camera Node 1"
             device.description = "Demo inspection device."
-            device.save(update_fields=["zone", "name", "description"])
+            device.save(update_fields=["line", "name", "description"])
 
         diseases = [
             {
@@ -153,5 +161,6 @@ class Command(BaseCommand):
         self.stdout.write(f"Site: {site.name}")
         self.stdout.write(f"Greenhouse: {greenhouse.name}")
         self.stdout.write(f"Zone: {zone.name}")
+        self.stdout.write(f"Line: {line.name} ({line.code})")
         self.stdout.write(f"Device: {device.name} ({device.identifier})")
         self.stdout.write(f"Model version: {model_version}")

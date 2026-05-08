@@ -58,9 +58,36 @@ class Zone(UUIDPrimaryKeyModel, TimeStampedModel):
         return f"{self.greenhouse.name} - {self.name}"
 
 
-class Device(UUIDPrimaryKeyModel, TimeStampedModel):
+class Line(UUIDPrimaryKeyModel, TimeStampedModel):
     zone = models.ForeignKey(
         Zone,
+        on_delete=models.CASCADE,
+        related_name="lines",
+    )
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ("name",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("zone", "name"),
+                name="unique_line_name_per_zone",
+            ),
+            models.UniqueConstraint(
+                fields=("zone", "code"),
+                name="unique_line_code_per_zone",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.zone.name} - {self.name}"
+
+
+class Device(UUIDPrimaryKeyModel, TimeStampedModel):
+    line = models.ForeignKey(
+        Line,
         on_delete=models.CASCADE,
         related_name="devices",
     )
@@ -72,10 +99,10 @@ class Device(UUIDPrimaryKeyModel, TimeStampedModel):
         ordering = ("name",)
         constraints = [
             models.UniqueConstraint(
-                fields=("zone", "name"),
-                name="unique_device_name_per_zone",
+                fields=("line", "name"),
+                name="unique_device_name_per_line",
             )
         ]
 
     def __str__(self) -> str:
-        return f"{self.zone.name} - {self.name}"
+        return f"{self.line.name} - {self.name}"

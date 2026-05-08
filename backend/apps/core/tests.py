@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import Role, User
 from apps.catalog.models import Disease
-from apps.devices.models import Device, Greenhouse, Site, Zone
+from apps.devices.models import Device, Greenhouse, Line, Site, Zone
 from apps.inference.models import InferenceIndex, ModelVersion
 from apps.inspections.models import Inspection, InspectionMatch
 from apps.review.models import Review
@@ -23,6 +23,7 @@ class SeedDemoDataCommandTests(APITestCase):
         self.assertEqual(Site.objects.filter(name="Demo Site").count(), 1)
         self.assertEqual(Greenhouse.objects.filter(name="Greenhouse A").count(), 1)
         self.assertEqual(Zone.objects.filter(name="Zone 1").count(), 1)
+        self.assertEqual(Line.objects.filter(name="Default Line", code="default").count(), 1)
         self.assertEqual(Device.objects.filter(identifier="demo-device-001").count(), 1)
         self.assertEqual(ModelVersion.objects.filter(name="Tomato Similarity Model").count(), 1)
         self.assertEqual(

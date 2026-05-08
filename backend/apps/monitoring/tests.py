@@ -7,7 +7,7 @@ from rest_framework.test import APIClient, APITestCase
 
 from apps.accounts.models import Role, User
 from apps.catalog.models import Disease
-from apps.devices.models import Device, Greenhouse, Site, Zone
+from apps.devices.models import Device, Greenhouse, Line, Site, Zone
 from apps.inference.models import InferenceIndex, ModelVersion
 from apps.inspections.models import Inspection
 from apps.notifications.models import Notification, NotificationUserState
@@ -43,8 +43,9 @@ class MonitoringApiTests(APITestCase):
         self.site = Site.objects.create(name="Monitor Site", location="Farm")
         self.greenhouse = Greenhouse.objects.create(site=self.site, name="GH-1")
         self.zone = Zone.objects.create(greenhouse=self.greenhouse, name="Zone 1")
+        self.line = Line.objects.create(zone=self.zone, name="Line 1", code="line-1")
         self.device = Device.objects.create(
-            zone=self.zone,
+            line=self.line,
             name="Monitor Camera",
             identifier="monitor-camera-1",
         )

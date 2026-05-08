@@ -5,6 +5,7 @@ import {
   Apartment as SiteIcon,
   DeviceHub as GreenhouseIcon,
   Hub as ZoneIcon,
+  Timeline as LineIcon,
   Memory as DeviceIcon,
 } from '@mui/icons-material';
 
@@ -37,7 +38,7 @@ function renderDeviceNode(device, path, onSelectDevice) {
       label={(
         <NodeLabel
           icon={<DeviceIcon fontSize="small" sx={{ color: 'primary.dark' }} />}
-          title={device.name}
+          title={device.name || device.identifier}
           meta={device.identifier}
         />
       )}
@@ -47,6 +48,7 @@ function renderDeviceNode(device, path, onSelectDevice) {
 
 function renderZoneNode(zone, path, onSelectDevice) {
   const itemId = `zone:${zone.id}`;
+  const deviceCount = zone.lines.reduce((count, line) => count + line.devices.length, 0);
 
   return (
     <TreeItem
@@ -56,11 +58,33 @@ function renderZoneNode(zone, path, onSelectDevice) {
         <NodeLabel
           icon={<ZoneIcon fontSize="small" sx={{ color: 'secondary.main' }} />}
           title={zone.name}
-          meta={`${zone.devices.length} device${zone.devices.length === 1 ? '' : 's'}`}
+          meta={`${zone.lines.length} line${zone.lines.length === 1 ? '' : 's'} / ${deviceCount} device${deviceCount === 1 ? '' : 's'}`}
         />
       )}
     >
-      {zone.devices.map((device) => renderDeviceNode(device, { ...path, zoneName: zone.name }, onSelectDevice))}
+      {zone.lines.map((line) =>
+        renderLineNode(line, { ...path, zoneName: zone.name, lineName: line.name }, onSelectDevice),
+      )}
+    </TreeItem>
+  );
+}
+
+function renderLineNode(line, path, onSelectDevice) {
+  const itemId = `line:${line.id}`;
+
+  return (
+    <TreeItem
+      key={itemId}
+      itemId={itemId}
+      label={(
+        <NodeLabel
+          icon={<LineIcon fontSize="small" sx={{ color: 'warning.main' }} />}
+          title={line.name}
+          meta={`${line.devices.length} device${line.devices.length === 1 ? '' : 's'}`}
+        />
+      )}
+    >
+      {line.devices.map((device) => renderDeviceNode(device, path, onSelectDevice))}
     </TreeItem>
   );
 }

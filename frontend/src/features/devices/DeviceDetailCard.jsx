@@ -20,6 +20,10 @@ function DetailRow({ label, value }) {
   );
 }
 
+function resolveHierarchyValue(primaryValue, fallbackValue) {
+  return primaryValue || fallbackValue || 'N/A';
+}
+
 export default function DeviceDetailCard({ device, hierarchyPath }) {
   if (!device) {
     return (
@@ -46,7 +50,8 @@ export default function DeviceDetailCard({ device, hierarchyPath }) {
           </Typography>
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
             <Chip size="small" label={`ID ${device.id}`} />
-            <Chip size="small" color="primary" variant="outlined" label={`Zone ${device.zone}`} />
+            <Chip size="small" color="primary" variant="outlined" label={`Line ${device.line_name || device.line}`} />
+            <Chip size="small" variant="outlined" label={`Zone ${device.zone_name || device.zone}`} />
           </Stack>
         </Stack>
 
@@ -54,7 +59,12 @@ export default function DeviceDetailCard({ device, hierarchyPath }) {
 
         <Stack spacing={1.1}>
           <DetailRow label="id" value={device.id} />
+          <DetailRow label="line" value={device.line} />
+          <DetailRow label="line_name" value={device.line_name} />
           <DetailRow label="zone" value={device.zone} />
+          <DetailRow label="zone_name" value={device.zone_name} />
+          <DetailRow label="greenhouse_name" value={device.greenhouse_name} />
+          <DetailRow label="site_name" value={device.site_name} />
           <DetailRow label="name" value={device.name} />
           <DetailRow label="identifier" value={device.identifier} />
           <DetailRow label="description" value={device.description} />
@@ -66,11 +76,15 @@ export default function DeviceDetailCard({ device, hierarchyPath }) {
 
         <Stack spacing={0.75}>
           <Typography variant="subtitle2" color="text.secondary">
-            Hierarchy path
+            Hierarchy
           </Typography>
-          <Typography variant="body2">
-            {hierarchyPath.siteName} / {hierarchyPath.greenhouseName} / {hierarchyPath.zoneName}
-          </Typography>
+          <Stack spacing={1.1}>
+            <DetailRow label="site" value={resolveHierarchyValue(hierarchyPath?.siteName, device.site_name)} />
+            <DetailRow label="greenhouse" value={resolveHierarchyValue(hierarchyPath?.greenhouseName, device.greenhouse_name)} />
+            <DetailRow label="zone" value={resolveHierarchyValue(hierarchyPath?.zoneName, device.zone_name)} />
+            <DetailRow label="line" value={resolveHierarchyValue(hierarchyPath?.lineName, device.line_name)} />
+            <DetailRow label="device" value={device.name || device.identifier} />
+          </Stack>
         </Stack>
       </Stack>
     </PanelCard>
