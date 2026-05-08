@@ -5,6 +5,7 @@ from config.env import env, env_bool, env_int, env_list, load_env_file
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_env_file(BASE_DIR / ".env")
+AI_ASSETS_DIR = Path(env("AI_ASSETS_DIR", str(BASE_DIR.parent / "ai_assets"))).resolve()
 
 SECRET_KEY = env(
     "DJANGO_SECRET_KEY",

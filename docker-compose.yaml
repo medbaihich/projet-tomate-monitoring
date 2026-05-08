@@ -77,12 +77,15 @@ services:
       DJANGO_SECRET_KEY: django-insecure-change-me-please-replace-this-secret
       DJANGO_DEBUG: "True"
       DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend,traefik"
+      AI_ASSETS_DIR: /app/ai_assets
       POSTGRES_DB: tomato_db
       POSTGRES_USER: tomato_user
       POSTGRES_PASSWORD: tomato_pass
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./ai_assets:/app/ai_assets
     depends_on:
       db:
         condition: service_healthy

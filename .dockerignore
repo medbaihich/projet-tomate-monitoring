@@ -1,0 +1,92 @@
+# VCS and CI metadata
+.git/
+.github/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor and IDE settings
+.idea/
+.vscode/
+*.suo
+*.user
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python cache and tooling
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+.pyre/
+
+# Coverage and test outputs
+.coverage
+.coverage.*
+coverage/
+coverage.xml
+htmlcov/
+
+# Virtual environments
+.venv/
+.venv-1/
+venv/
+env/
+
+# Node and frontend build artifacts
+node_modules/
+frontend/node_modules/
+dist/
+build/
+frontend/dist/
+frontend/build/
+dist-ssr/
+*.tsbuildinfo
+.eslintcache
+.parcel-cache/
+
+# Django local artifacts
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# AI assets: exclude only local envs, caches, and scratch outputs
+ai_assets/.venv/
+ai_assets/.venv-1/
+ai_assets/**/__pycache__/
+ai_assets/**/*.py[cod]
+ai_assets/**/.ipynb_checkpoints/
+ai_assets/**/tmp/
+ai_assets/**/temp/
+ai_assets/**/cache/
+ai_assets/**/outputs/
+ai_assets/**/runs/

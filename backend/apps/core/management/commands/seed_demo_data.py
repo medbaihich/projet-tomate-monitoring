@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
@@ -12,6 +15,8 @@ class Command(BaseCommand):
     help = "Seed a minimal set of demo data for local development."
 
     def handle(self, *args, **options):
+        ai_assets_dir = Path(settings.AI_ASSETS_DIR)
+
         admin_role, _ = Role.objects.get_or_create(
             name="admin",
             defaults={"description": "Demo administrator role."},
@@ -109,7 +114,7 @@ class Command(BaseCommand):
             version="v1.0.0",
             defaults={
                 "framework": "external",
-                "artifact_path": "ai_assets/models/tomato_similarity_model.bin",
+                "artifact_path": str(ai_assets_dir / "models" / "tomato_similarity_model.bin"),
                 "is_active": True,
                 "notes": "Demo model metadata for local development.",
             },
@@ -120,8 +125,8 @@ class Command(BaseCommand):
             organ_type=InferenceIndex.OrganType.FRUIT,
             name="fruit-demo-index",
             defaults={
-                "index_path": "ai_assets/indexes/fruit.index",
-                "metadata_path": "ai_assets/metadata/fruit_metadata.csv",
+                "index_path": str(ai_assets_dir / "indexes" / "fruit.index"),
+                "metadata_path": str(ai_assets_dir / "metadata" / "fruit_metadata.csv"),
                 "threshold_default": 0.8,
                 "top_k_default": 5,
                 "is_active": True,
@@ -133,8 +138,8 @@ class Command(BaseCommand):
             organ_type=InferenceIndex.OrganType.LEAF,
             name="leaf-demo-index",
             defaults={
-                "index_path": "ai_assets/indexes/leaf.index",
-                "metadata_path": "ai_assets/metadata/final_metadata.csv",
+                "index_path": str(ai_assets_dir / "indexes" / "leaf.index"),
+                "metadata_path": str(ai_assets_dir / "metadata" / "final_metadata.csv"),
                 "threshold_default": 0.8,
                 "top_k_default": 5,
                 "is_active": True,
