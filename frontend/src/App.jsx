@@ -1,18 +1,20 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
+import { Box, CircularProgress, Stack, Typography } from '@mui/material';
 import AdminRoute from '@/components/AdminRoute';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import AccountPage from '@/features/account/AccountPage';
-import CatalogPage from '@/features/catalog/CatalogPage';
-import DashboardPage from '@/features/dashboard/DashboardPage';
 import MainLayout from '@/layouts/MainLayout';
-import DevicesPage from '@/features/devices/DevicesPage';
-import InspectionsPage from '@/features/inspections/InspectionsPage';
-import Login from '@/features/auth/Login';
-import MonitoringPage from '@/features/monitoring/MonitoringPage';
-import ReviewPage from '@/features/review/ReviewPage';
 import useAuthStore from '@/store/authStore';
+
+const AccountPage = lazy(() => import('@/features/account/AccountPage'));
+const CatalogPage = lazy(() => import('@/features/catalog/CatalogPage'));
+const DashboardPage = lazy(() => import('@/features/dashboard/DashboardPage'));
+const DevicesPage = lazy(() => import('@/features/devices/DevicesPage'));
+const InspectionsPage = lazy(() => import('@/features/inspections/InspectionsPage'));
+const Login = lazy(() => import('@/features/auth/Login'));
+const MonitoringPage = lazy(() => import('@/features/monitoring/MonitoringPage'));
+const ReviewPage = lazy(() => import('@/features/review/ReviewPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,24 +43,43 @@ function AuthBootstrap() {
   return null;
 }
 
+function RouteFallback() {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 360 }}>
+      <Stack spacing={2} alignItems="center">
+        <CircularProgress />
+        <Typography color="text.secondary">Loading page...</Typography>
+      </Stack>
+    </Box>
+  );
+}
+
+function withRouteSuspense(element) {
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      {element}
+    </Suspense>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthBootstrap />
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route path="/login" element={withRouteSuspense(<Login />)} />
 
         <Route element={<ProtectedRoute />}>
           <Route element={<MainLayout />}>
-            <Route path="/account" element={<AccountPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/account" element={withRouteSuspense(<AccountPage />)} />
+            <Route path="/dashboard" element={withRouteSuspense(<DashboardPage />)} />
             <Route element={<AdminRoute />}>
-              <Route path="/monitoring" element={<MonitoringPage />} />
+              <Route path="/monitoring" element={withRouteSuspense(<MonitoringPage />)} />
             </Route>
-            <Route path="/inspections" element={<InspectionsPage />} />
-            <Route path="/review" element={<ReviewPage />} />
-            <Route path="/devices" element={<DevicesPage />} />
-            <Route path="/catalog" element={<CatalogPage />} />
+            <Route path="/inspections" element={withRouteSuspense(<InspectionsPage />)} />
+            <Route path="/review" element={withRouteSuspense(<ReviewPage />)} />
+            <Route path="/devices" element={withRouteSuspense(<DevicesPage />)} />
+            <Route path="/catalog" element={withRouteSuspense(<CatalogPage />)} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Route>

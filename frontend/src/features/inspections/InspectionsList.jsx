@@ -14,11 +14,16 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
 export default function InspectionsList({
   inspections,
+  rowCount,
   selectedInspectionId,
   onSelectInspection,
   deviceMap,
   diseaseMap,
   loading = false,
+  paginationModel,
+  onPaginationModelChange,
+  sortModel,
+  onSortModelChange,
 }) {
   const columns = useMemo(
     () => [
@@ -27,6 +32,7 @@ export default function InspectionsList({
         headerName: 'Captured',
         minWidth: 180,
         flex: 1,
+        sortable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary" noWrap sx={{ width: '100%' }}>
             {formatInspectionDateTime(params.value)}
@@ -38,6 +44,7 @@ export default function InspectionsList({
         headerName: 'Device',
         minWidth: 220,
         flex: 1.25,
+        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" noWrap sx={{ width: '100%' }}>
             {resolveInspectionDeviceLabel(params.value, deviceMap)}
@@ -49,6 +56,7 @@ export default function InspectionsList({
         headerName: 'Prediction',
         minWidth: 220,
         flex: 1.2,
+        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" noWrap sx={{ width: '100%' }}>
             {params.row.top1_label || resolveInspectionDiseaseLabel(params.row.predicted_disease, diseaseMap)}
@@ -60,6 +68,7 @@ export default function InspectionsList({
         headerName: 'Status',
         minWidth: 120,
         flex: 0.7,
+        sortable: false,
         renderCell: (params) => (
           <StatusChip
             label={params.value}
@@ -72,6 +81,7 @@ export default function InspectionsList({
         headerName: 'Processing',
         minWidth: 130,
         flex: 0.8,
+        sortable: false,
         renderCell: (params) => (
           <StatusChip
             label={params.value}
@@ -86,6 +96,7 @@ export default function InspectionsList({
         flex: 0.65,
         align: 'right',
         headerAlign: 'right',
+        sortable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary" sx={{ width: '100%', textAlign: 'right' }}>
             {formatInspectionConfidence(params.value)}
@@ -96,9 +107,15 @@ export default function InspectionsList({
     [deviceMap, diseaseMap],
   );
 
-  const rowSelectionModel = selectedInspectionId
-    ? { type: 'include', ids: new Set([selectedInspectionId]) }
-    : { type: 'include', ids: new Set() };
+  const totalInspections = typeof rowCount === 'number' ? rowCount : inspections.length;
+  const rowSelectionModel = useMemo(
+    () => (
+      selectedInspectionId
+        ? { type: 'include', ids: new Set([selectedInspectionId]) }
+        : { type: 'include', ids: new Set() }
+    ),
+    [selectedInspectionId],
+  );
 
   const handleRowSelectionModelChange = (nextSelectionModel) => {
     const nextSelectedId = nextSelectionModel.ids.values().next().value;
@@ -110,7 +127,7 @@ export default function InspectionsList({
     <PanelCard
       title="Inspection registry"
       subtitle="All inspection records returned by the inspections API."
-      badge={`${inspections.length} inspection${inspections.length === 1 ? '' : 's'}`}
+      badge={`${totalInspections} inspection${totalInspections === 1 ? '' : 's'}`}
     >
       <Box sx={{ height: 460 }}>
         <DataGrid
@@ -119,14 +136,13 @@ export default function InspectionsList({
           getRowId={(row) => row.id}
           loading={loading}
           pagination
-          initialState={{
-            pagination: {
-              paginationModel: {
-                page: 0,
-                pageSize: 20,
-              },
-            },
-          }}
+          paginationMode="server"
+          sortingMode="server"
+          rowCount={totalInspections}
+          paginationModel={paginationModel}
+          onPaginationModelChange={onPaginationModelChange}
+          sortModel={sortModel}
+          onSortModelChange={onSortModelChange}
           pageSizeOptions={PAGE_SIZE_OPTIONS}
           disableColumnMenu
           disableRowSelectionOnClick={false}

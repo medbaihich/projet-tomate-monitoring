@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Alert,
@@ -16,7 +16,11 @@ import CreateDeviceDialog from '@/features/devices/CreateDeviceDialog';
 import StateBlock from '@/components/ui/StateBlock';
 import DevicesTree from '@/features/devices/DevicesTree';
 import DeviceDetailCard from '@/features/devices/DeviceDetailCard';
-import { createDevice, fetchDevicesHierarchy } from '@/features/devices/api';
+import {
+  createDevice,
+  DEVICES_HIERARCHY_QUERY_KEY,
+  fetchDevicesHierarchy,
+} from '@/features/devices/api';
 import useAuthStore from '@/store/authStore';
 
 function buildDefaultExpandedItems(sites) {
@@ -74,10 +78,13 @@ export default function DevicesPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const roleName = useAuthStore((state) => state.user?.role?.name || '');
   const isAdmin = roleName.trim().toLowerCase() === 'admin';
-  const { data: sites = [], isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['devices-hierarchy'],
+  const hierarchyQuery = useQuery({
+    queryKey: DEVICES_HIERARCHY_QUERY_KEY,
     queryFn: fetchDevicesHierarchy,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
   });
+  const { data: sites = [], isLoading, isError, error, refetch } = hierarchyQuery;
 
   const [expandedItems, setExpandedItems] = useState(null);
 
@@ -87,10 +94,14 @@ export default function DevicesPage() {
 
   const selectedItemId = selectedDevice ? `device:${selectedDevice.id}` : null;
 
-  const handleSelectDevice = (device, path) => {
+  const handleSelectDevice = useCallback((device, path) => {
     setSelectedDevice(device);
     setSelectedPath(path);
-  };
+  }, []);
+  const handleExpandedItemsChange = useCallback((_, itemIds) => {
+    setExpandedItems(itemIds);
+  }, []);
+  const handleSelectedItemsChange = useCallback(() => {}, []);
 
   const createDeviceMutation = useMutation({
     mutationFn: createDevice,
@@ -98,7 +109,7 @@ export default function DevicesPage() {
 
   const handleCreateDevice = async (payload) => {
     const createdDevice = await createDeviceMutation.mutateAsync(payload);
-    const refreshed = await refetch();
+    const refreshed = await hierarchyQuery.refetch();
     const nextSites = refreshed.data ?? [];
     const locatedDevice = findDeviceWithPath(nextSites, createdDevice.id);
 
@@ -179,8 +190,8 @@ export default function DevicesPage() {
               sites={sites}
               selectedItemId={selectedItemId}
               expandedItems={visibleExpandedItems}
-              onExpandedItemsChange={(_, itemIds) => setExpandedItems(itemIds)}
-              onSelectedItemsChange={() => {}}
+              onExpandedItemsChange={handleExpandedItemsChange}
+              onSelectedItemsChange={handleSelectedItemsChange}
               onSelectDevice={handleSelectDevice}
             />
           </PanelCard>

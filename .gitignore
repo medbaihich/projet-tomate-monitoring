@@ -89,7 +89,6 @@ ai_assets/**/outputs/
 ai_assets/**/runs/
 ai_assets/dataset_final
 *.md
-
-.dockerignore
-.gitattributes
-.gitignore
+*.png
+*.jpg
+*.jpeg  

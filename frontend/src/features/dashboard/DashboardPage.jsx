@@ -15,7 +15,7 @@ import {
   Typography,
 } from '@mui/material';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
-import { fetchDashboardData } from '@/features/dashboard/api';
+import { fetchDashboardData, fetchDashboardReferenceData } from '@/features/dashboard/api';
 import DashboardMetricCard from '@/features/dashboard/DashboardMetricCard';
 import DashboardChartCard from '@/features/dashboard/DashboardChartCard';
 import {
@@ -42,6 +42,8 @@ import { resolveInspectionDiseaseLabel } from '@/features/inspections/utils';
 
 const NOTIFICATIONS_QUERY_KEY = ['dashboard-notifications'];
 const UNREAD_COUNT_QUERY_KEY = ['dashboard-notifications-unread-count'];
+const DASHBOARD_REFERENCE_QUERY_KEY = ['dashboard-reference-data'];
+const DASHBOARD_REFRESH_DEBOUNCE_MS = 15000;
 
 function DashboardSkeleton() {
   return (
@@ -250,28 +252,46 @@ export default function DashboardPage() {
     placeholderData: (previousData) => previousData,
   });
 
+  const dashboardReferenceQuery = useQuery({
+    queryKey: DASHBOARD_REFERENCE_QUERY_KEY,
+    queryFn: fetchDashboardReferenceData,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+
   const notificationsQuery = useQuery({
     queryKey: NOTIFICATIONS_QUERY_KEY,
     queryFn: () => fetchNotificationsPage({ pageSize: NOTIFICATIONS_PAGE_SIZE }),
     placeholderData: (previousData) => previousData,
-    refetchInterval: 60 * 1000,
+    refetchInterval: 2 * 60 * 1000,
   });
 
   const unreadCountQuery = useQuery({
     queryKey: UNREAD_COUNT_QUERY_KEY,
     queryFn: fetchUnreadNotificationsCount,
     placeholderData: (previousData) => previousData ?? 0,
-    refetchInterval: 30 * 1000,
+    refetchInterval: 2 * 60 * 1000,
   });
 
   const markReadMutation = useMutation({
     mutationFn: markNotificationRead,
     onSuccess: (updatedNotification) => {
+      const previousPage = queryClient.getQueryData(NOTIFICATIONS_QUERY_KEY);
+      const wasUnread = (previousPage?.results ?? []).some(
+        (notification) => notification.id === updatedNotification.id && !notification.is_read,
+      );
+
       queryClient.setQueryData(
         NOTIFICATIONS_QUERY_KEY,
         (previousData) => updateNotificationInPage(previousData, updatedNotification),
       );
-      queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_QUERY_KEY });
+
+      if (wasUnread) {
+        queryClient.setQueryData(
+          UNREAD_COUNT_QUERY_KEY,
+          (previousCount) => (typeof previousCount === 'number' ? Math.max(previousCount - 1, 0) : previousCount),
+        );
+      }
     },
   });
 
@@ -283,7 +303,6 @@ export default function DashboardPage() {
         (previousData) => markAllNotificationsAsReadInPage(previousData),
       );
       queryClient.setQueryData(UNREAD_COUNT_QUERY_KEY, 0);
-      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
     },
   });
 
@@ -295,6 +314,7 @@ export default function DashboardPage() {
 
     let socket;
     let reconnectTimeoutId;
+    let dashboardRefreshTimeoutId;
     let reconnectAttempts = 0;
     let isDisposed = false;
 
@@ -334,7 +354,14 @@ export default function DashboardPage() {
             setLiveAlert(payload.notification);
           }
 
-          queryClient.invalidateQueries({ queryKey: ['dashboard-operations'] });
+          // Coalesce live events so bursts of notifications do not immediately retrigger
+          // the full dashboard query on every socket message.
+          if (!dashboardRefreshTimeoutId) {
+            dashboardRefreshTimeoutId = window.setTimeout(() => {
+              dashboardRefreshTimeoutId = null;
+              queryClient.invalidateQueries({ queryKey: ['dashboard-operations'] });
+            }, DASHBOARD_REFRESH_DEBOUNCE_MS);
+          }
         } catch {
           // Ignore malformed websocket payloads and fall back to REST refreshes.
         }
@@ -364,6 +391,9 @@ export default function DashboardPage() {
       if (reconnectTimeoutId) {
         window.clearTimeout(reconnectTimeoutId);
       }
+      if (dashboardRefreshTimeoutId) {
+        window.clearTimeout(dashboardRefreshTimeoutId);
+      }
 
       if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         socket.close();
@@ -371,7 +401,10 @@ export default function DashboardPage() {
     };
   }, [accessToken, queryClient]);
 
-  const notifications = notificationsQuery.data?.results ?? [];
+  const notifications = useMemo(
+    () => notificationsQuery.data?.results ?? [],
+    [notificationsQuery.data?.results],
+  );
   const unreadCount = typeof unreadCountQuery.data === 'number'
     ? unreadCountQuery.data
     : notifications.filter((notification) => !notification.is_read).length;
@@ -391,12 +424,12 @@ export default function DashboardPage() {
   const latestAlertTimestampLabel = formatAlertTimestamp(latestNotification?.created_at);
 
   const deviceMap = useMemo(
-    () => new Map((data?.devices ?? []).map((device) => [device.id, device])),
-    [data?.devices],
+    () => new Map((dashboardReferenceQuery.data?.devices ?? []).map((device) => [device.id, device])),
+    [dashboardReferenceQuery.data?.devices],
   );
   const diseaseMap = useMemo(
-    () => new Map((data?.diseases ?? []).map((disease) => [disease.id, disease])),
-    [data?.diseases],
+    () => new Map((dashboardReferenceQuery.data?.diseases ?? []).map((disease) => [disease.id, disease])),
+    [dashboardReferenceQuery.data?.diseases],
   );
   const reviewActionItems = useMemo(
     () => (data?.pendingReviewQueue ?? []).map((inspection) => ({
@@ -419,8 +452,8 @@ export default function DashboardPage() {
   );
 
   const selectedDisease = useMemo(
-    () => resolveDiseaseRecord(selectedNotification, data?.diseases ?? []),
-    [selectedNotification, data?.diseases],
+    () => resolveDiseaseRecord(selectedNotification, dashboardReferenceQuery.data?.diseases ?? []),
+    [selectedNotification, dashboardReferenceQuery.data?.diseases],
   );
 
   const relatedInspections = useMemo(
@@ -451,21 +484,30 @@ export default function DashboardPage() {
     navigate('/review');
   };
 
-  if (isLoading) {
+  if (isLoading || dashboardReferenceQuery.isLoading) {
     return <DashboardSkeleton />;
   }
 
-  if (isError) {
+  if (isError || dashboardReferenceQuery.isError) {
+    const activeError = error || dashboardReferenceQuery.error;
+
     return (
       <Alert
         severity="error"
         action={(
-          <Button color="inherit" size="small" onClick={() => refetch()}>
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => {
+              refetch();
+              dashboardReferenceQuery.refetch();
+            }}
+          >
             Retry
           </Button>
         )}
       >
-        {error?.response?.data?.detail || error?.message || 'Failed to load dashboard data.'}
+        {activeError?.response?.data?.detail || activeError?.message || 'Failed to load dashboard data.'}
       </Alert>
     );
   }
@@ -498,6 +540,7 @@ export default function DashboardPage() {
             startIcon={<RefreshRoundedIcon />}
             onClick={() => {
               refetch();
+              dashboardReferenceQuery.refetch();
               notificationsQuery.refetch();
               unreadCountQuery.refetch();
             }}

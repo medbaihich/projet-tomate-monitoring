@@ -14,9 +14,14 @@ import {
   Typography,
 } from '@mui/material';
 import PageHeader from '@/components/ui/PageHeader';
+import {
+  fetchInspectionReferenceData,
+  INSPECTION_REFERENCE_DATA_QUERY_KEY,
+  INSPECTIONS_WORKSPACE_QUERY_KEY,
+} from '@/features/inspections/api';
 import ReviewWorkspaceList from '@/features/review/ReviewWorkspaceList';
 import ReviewDetailPanel from '@/features/review/ReviewDetailPanel';
-import { fetchReviewWorkspace, submitReview } from '@/features/review/api';
+import { fetchReviewWorkspace, REVIEW_WORKSPACE_QUERY_KEY, submitReview } from '@/features/review/api';
 import { isInspectionReviewable } from '@/features/review/utils';
 
 function buildMap(items) {
@@ -33,15 +38,26 @@ export default function ReviewPage() {
   const [successOpen, setSuccessOpen] = useState(false);
   const appliedFocusKeyRef = useRef(null);
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['review-workspace'],
+  const workspaceQuery = useQuery({
+    queryKey: REVIEW_WORKSPACE_QUERY_KEY,
     queryFn: fetchReviewWorkspace,
+    placeholderData: (previousData) => previousData,
   });
 
-  const inspections = useMemo(() => data?.inspections ?? [], [data?.inspections]);
-  const reviews = useMemo(() => data?.reviews ?? [], [data?.reviews]);
-  const devices = useMemo(() => data?.devices ?? [], [data?.devices]);
-  const diseases = useMemo(() => data?.diseases ?? [], [data?.diseases]);
+  const referenceQuery = useQuery({
+    queryKey: INSPECTION_REFERENCE_DATA_QUERY_KEY,
+    queryFn: fetchInspectionReferenceData,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+
+  const inspections = useMemo(
+    () => workspaceQuery.data?.inspections ?? [],
+    [workspaceQuery.data?.inspections],
+  );
+  const reviews = useMemo(() => workspaceQuery.data?.reviews ?? [], [workspaceQuery.data?.reviews]);
+  const devices = useMemo(() => referenceQuery.data?.devices ?? [], [referenceQuery.data?.devices]);
+  const diseases = useMemo(() => referenceQuery.data?.diseases ?? [], [referenceQuery.data?.diseases]);
 
   const reviewedInspectionIds = useMemo(
     () => new Set(reviews.map((review) => review.inspection)),
@@ -70,6 +86,18 @@ export default function ReviewPage() {
     [inspectionMap, reviews],
   );
 
+  const activeHistoryReviewId = useMemo(() => {
+    if (selectedHistoryReviewId && reviewHistoryItems.some((item) => item.review.id === selectedHistoryReviewId)) {
+      return selectedHistoryReviewId;
+    }
+
+    return reviewHistoryItems[0]?.review.id ?? null;
+  }, [reviewHistoryItems, selectedHistoryReviewId]);
+  const selectedHistoryItem = useMemo(
+    () => reviewHistoryItems.find((item) => item.review.id === activeHistoryReviewId) ?? null,
+    [activeHistoryReviewId, reviewHistoryItems],
+  );
+  const requestedFocusInspectionId = location.state?.focusInspectionId ?? null;
   const selectedInspection = useMemo(
     () => reviewableInspections.find((inspection) => inspection.id === selectedInspectionId) ?? null,
     [reviewableInspections, selectedInspectionId],
@@ -85,39 +113,37 @@ export default function ReviewPage() {
     && panelInspection.id === lastSubmittedInspectionId
     && !selectedInspection,
   );
-  const activeHistoryReviewId = useMemo(() => {
-    if (selectedHistoryReviewId && reviewHistoryItems.some((item) => item.review.id === selectedHistoryReviewId)) {
-      return selectedHistoryReviewId;
-    }
-
-    return reviewHistoryItems[0]?.review.id ?? null;
-  }, [reviewHistoryItems, selectedHistoryReviewId]);
-  const selectedHistoryItem = useMemo(
-    () => reviewHistoryItems.find((item) => item.review.id === activeHistoryReviewId) ?? null,
-    [activeHistoryReviewId, reviewHistoryItems],
-  );
-  const requestedFocusInspectionId = location.state?.focusInspectionId ?? null;
 
   useEffect(() => {
-    if (!requestedFocusInspectionId || isLoading) {
-      return;
+    if (!requestedFocusInspectionId || workspaceQuery.isLoading) {
+      return undefined;
     }
 
     const focusKey = `${location.key}:${requestedFocusInspectionId}`;
     if (appliedFocusKeyRef.current === focusKey) {
-      return;
+      return undefined;
     }
 
     appliedFocusKeyRef.current = focusKey;
-    setActiveView('pending');
-    setLastSubmittedInspectionId(null);
-
-    const focusedInspection = reviewableInspections.find(
+    const focusedInspectionId = reviewableInspections.find(
       (inspection) => inspection.id === requestedFocusInspectionId,
-    );
+    )?.id ?? null;
 
-    setSelectedInspectionId(focusedInspection?.id ?? null);
-  }, [isLoading, location.key, requestedFocusInspectionId, reviewableInspections]);
+    let isCancelled = false;
+    queueMicrotask(() => {
+      if (isCancelled) {
+        return;
+      }
+
+      setActiveView('pending');
+      setLastSubmittedInspectionId(null);
+      setSelectedInspectionId(focusedInspectionId);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [location.key, requestedFocusInspectionId, reviewableInspections, workspaceQuery.isLoading]);
 
   const submitMutation = useMutation({
     mutationFn: submitReview,
@@ -126,10 +152,9 @@ export default function ReviewPage() {
       setLastSubmittedInspectionId(variables.inspection);
       setSelectedHistoryReviewId(data.id);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['review-workspace'] }),
-        queryClient.invalidateQueries({ queryKey: ['inspections-workspace'] }),
+        queryClient.invalidateQueries({ queryKey: REVIEW_WORKSPACE_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: INSPECTIONS_WORKSPACE_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ['dashboard-operations'] }),
-        queryClient.invalidateQueries({ queryKey: ['catalog-diseases'] }),
       ]);
     },
   });
@@ -142,7 +167,7 @@ export default function ReviewPage() {
     setSelectedHistoryReviewId(item.review.id);
   };
 
-  if (isLoading) {
+  if (workspaceQuery.isLoading || referenceQuery.isLoading) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 360 }}>
         <Stack spacing={2} alignItems="center">
@@ -153,17 +178,26 @@ export default function ReviewPage() {
     );
   }
 
-  if (isError) {
+  if (workspaceQuery.isError || referenceQuery.isError) {
+    const activeError = workspaceQuery.error || referenceQuery.error;
+
     return (
       <Alert
         severity="error"
         action={(
-          <Button color="inherit" size="small" onClick={() => refetch()}>
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => {
+              workspaceQuery.refetch();
+              referenceQuery.refetch();
+            }}
+          >
             Retry
           </Button>
         )}
       >
-        {error?.response?.data?.detail || error?.message || 'Failed to load the review workspace.'}
+        {activeError?.response?.data?.detail || activeError?.message || 'Failed to load the review workspace.'}
       </Alert>
     );
   }

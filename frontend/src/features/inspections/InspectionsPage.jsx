@@ -11,37 +11,104 @@ import {
 } from '@mui/material';
 import PageHeader from '@/components/ui/PageHeader';
 import StateBlock from '@/components/ui/StateBlock';
-import { fetchInspectionsWorkspace } from '@/features/inspections/api';
+import {
+  fetchInspectionReferenceData,
+  fetchInspectionsPage,
+  INSPECTION_REFERENCE_DATA_QUERY_KEY,
+  INSPECTIONS_WORKSPACE_QUERY_KEY,
+} from '@/features/inspections/api';
 import InspectionDetailPanel from '@/features/inspections/InspectionDetailPanel';
 import InspectionsList from '@/features/inspections/InspectionsList';
+
+const DEFAULT_PAGINATION_MODEL = {
+  page: 0,
+  pageSize: 20,
+};
+
+const DEFAULT_SORT_MODEL = [
+  {
+    field: 'captured_at',
+    sort: 'desc',
+  },
+];
 
 function buildMap(items) {
   return new Map(items.map((item) => [item.id, item]));
 }
 
 export default function InspectionsPage() {
-  const [selectedInspectionId, setSelectedInspectionId] = useState(null);
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['inspections-workspace'],
-    queryFn: fetchInspectionsWorkspace,
+  const [selectedInspectionSnapshot, setSelectedInspectionSnapshot] = useState(null);
+  const [paginationModel, setPaginationModel] = useState(DEFAULT_PAGINATION_MODEL);
+  const [sortModel, setSortModel] = useState(DEFAULT_SORT_MODEL);
+
+  const ordering = useMemo(() => {
+    const activeSort = sortModel[0];
+
+    if (!activeSort?.field || !activeSort.sort) {
+      return '-captured_at';
+    }
+
+    return `${activeSort.sort === 'desc' ? '-' : ''}${activeSort.field}`;
+  }, [sortModel]);
+
+  const inspectionsQuery = useQuery({
+    queryKey: [
+      ...INSPECTIONS_WORKSPACE_QUERY_KEY,
+      paginationModel.page,
+      paginationModel.pageSize,
+      ordering,
+    ],
+    queryFn: () => fetchInspectionsPage({
+      page: paginationModel.page,
+      pageSize: paginationModel.pageSize,
+      ordering,
+    }),
+    placeholderData: (previousData) => previousData,
   });
 
-  const inspections = useMemo(() => data?.inspections ?? [], [data?.inspections]);
-  const devices = useMemo(() => data?.devices ?? [], [data?.devices]);
-  const diseases = useMemo(() => data?.diseases ?? [], [data?.diseases]);
+  const referenceQuery = useQuery({
+    queryKey: INSPECTION_REFERENCE_DATA_QUERY_KEY,
+    queryFn: fetchInspectionReferenceData,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+
+  const inspections = useMemo(() => inspectionsQuery.data?.results ?? [], [inspectionsQuery.data?.results]);
+  const totalInspections = inspectionsQuery.data?.count ?? 0;
+  const devices = useMemo(() => referenceQuery.data?.devices ?? [], [referenceQuery.data?.devices]);
+  const diseases = useMemo(() => referenceQuery.data?.diseases ?? [], [referenceQuery.data?.diseases]);
   const deviceMap = useMemo(() => buildMap(devices), [devices]);
   const diseaseMap = useMemo(() => buildMap(diseases), [diseases]);
 
   const selectedInspection = useMemo(
-    () => inspections.find((inspection) => inspection.id === selectedInspectionId) ?? null,
-    [inspections, selectedInspectionId],
+    () => inspections.find((inspection) => inspection.id === selectedInspectionSnapshot?.id) ?? selectedInspectionSnapshot,
+    [inspections, selectedInspectionSnapshot],
+  );
+  const visibleSelectedInspectionId = useMemo(
+    () => (
+      selectedInspectionSnapshot && inspections.some((inspection) => inspection.id === selectedInspectionSnapshot.id)
+        ? selectedInspectionSnapshot.id
+        : null
+    ),
+    [inspections, selectedInspectionSnapshot],
   );
 
   const handleSelectInspection = (inspection) => {
-    setSelectedInspectionId(inspection?.id ?? null);
+    setSelectedInspectionSnapshot(inspection ?? null);
   };
 
-  if (isLoading) {
+  const handleSortModelChange = (nextSortModel) => {
+    const nextSort = nextSortModel[0];
+
+    if (!nextSort?.field || !nextSort.sort) {
+      setSortModel(DEFAULT_SORT_MODEL);
+      return;
+    }
+
+    setSortModel([nextSort]);
+  };
+
+  if (inspectionsQuery.isLoading || referenceQuery.isLoading) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 360 }}>
         <Stack spacing={2} alignItems="center">
@@ -52,22 +119,31 @@ export default function InspectionsPage() {
     );
   }
 
-  if (isError) {
+  if (inspectionsQuery.isError || referenceQuery.isError) {
+    const activeError = inspectionsQuery.error || referenceQuery.error;
+
     return (
       <Alert
         severity="error"
         action={(
-          <Button color="inherit" size="small" onClick={() => refetch()}>
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => {
+              inspectionsQuery.refetch();
+              referenceQuery.refetch();
+            }}
+          >
             Retry
           </Button>
         )}
       >
-        {error?.response?.data?.detail || error?.message || 'Failed to load inspections.'}
+        {activeError?.response?.data?.detail || activeError?.message || 'Failed to load inspections.'}
       </Alert>
     );
   }
 
-  if (inspections.length === 0) {
+  if (totalInspections === 0) {
     return (
       <StateBlock
         title="No inspections found"
@@ -89,10 +165,16 @@ export default function InspectionsPage() {
         <Grid size={{ xs: 12, lg: 7 }}>
           <InspectionsList
             inspections={inspections}
-            selectedInspectionId={selectedInspectionId}
+            rowCount={totalInspections}
+            selectedInspectionId={visibleSelectedInspectionId}
             onSelectInspection={handleSelectInspection}
             deviceMap={deviceMap}
             diseaseMap={diseaseMap}
+            loading={inspectionsQuery.isFetching}
+            paginationModel={paginationModel}
+            onPaginationModelChange={setPaginationModel}
+            sortModel={sortModel}
+            onSortModelChange={handleSortModelChange}
           />
         </Grid>
 

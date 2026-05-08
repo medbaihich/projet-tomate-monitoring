@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { Box, Chip, Stack, Typography } from '@mui/material';
 import { SimpleTreeView, TreeItem } from '@mui/x-tree-view';
 import {
@@ -7,7 +8,7 @@ import {
   Memory as DeviceIcon,
 } from '@mui/icons-material';
 
-function NodeLabel({ icon, title, meta }) {
+const NodeLabel = memo(function NodeLabel({ icon, title, meta }) {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ py: 0.35 }}>
       {icon}
@@ -23,7 +24,7 @@ function NodeLabel({ icon, title, meta }) {
       </Box>
     </Stack>
   );
-}
+});
 
 function renderDeviceNode(device, path, onSelectDevice) {
   const itemId = `device:${device.id}`;
@@ -106,7 +107,19 @@ function renderSiteNode(site, onSelectDevice) {
   );
 }
 
-export default function DevicesTree({ sites, selectedItemId, expandedItems, onExpandedItemsChange, onSelectedItemsChange, onSelectDevice }) {
+function DevicesTree({
+  sites,
+  selectedItemId,
+  expandedItems,
+  onExpandedItemsChange,
+  onSelectedItemsChange,
+  onSelectDevice,
+}) {
+  const treeItems = useMemo(
+    () => sites.map((site) => renderSiteNode(site, onSelectDevice)),
+    [sites, onSelectDevice],
+  );
+
   return (
     <Stack spacing={1}>
       <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
@@ -137,8 +150,10 @@ export default function DevicesTree({ sites, selectedItemId, expandedItems, onEx
           },
         }}
       >
-        {sites.map((site) => renderSiteNode(site, onSelectDevice))}
+        {treeItems}
       </SimpleTreeView>
     </Stack>
   );
 }
+
+export default memo(DevicesTree);

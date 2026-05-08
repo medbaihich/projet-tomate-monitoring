@@ -23,12 +23,22 @@ import StateBlock from '@/components/ui/StateBlock';
 import StatusChip from '@/components/ui/StatusChip';
 import DashboardChartCard from '@/features/dashboard/DashboardChartCard';
 import {
+  buildMonitoringReviewRows,
+  fetchMonitoringDiseaseReferenceData,
   fetchMonitoringReviewsPage,
   fetchMonitoringSummary,
   fetchNotificationReadActivity,
   fetchUserActivity,
+  MONITORING_DISEASE_REFERENCE_QUERY_KEY,
+  MONITORING_NOTIFICATION_READ_ACTIVITY_QUERY_KEY,
+  MONITORING_REVIEWS_QUERY_KEY,
+  MONITORING_SUMMARY_QUERY_KEY,
+  MONITORING_USER_ACTIVITY_QUERY_KEY,
 } from '@/features/monitoring/api';
 import { resolveReviewDecisionTone } from '@/features/review/utils';
+
+const MONITORING_POLL_INTERVAL_MS = 2 * 60 * 1000;
+const MONITORING_STALE_TIME_MS = 60 * 1000;
 
 function formatDateTime(value, fallback = 'No timestamp') {
   if (!value) {
@@ -385,33 +395,59 @@ function UserActivityList({ items }) {
 export default function MonitoringPage() {
   const [reviewsPaginationModel, setReviewsPaginationModel] = useState({ page: 0, pageSize: 8 });
   const summaryQuery = useQuery({
-    queryKey: ['monitoring-summary'],
+    queryKey: MONITORING_SUMMARY_QUERY_KEY,
     queryFn: fetchMonitoringSummary,
-    refetchInterval: 60 * 1000,
+    staleTime: MONITORING_STALE_TIME_MS,
+    refetchInterval: MONITORING_POLL_INTERVAL_MS,
+    placeholderData: (previousData) => previousData,
   });
 
   const reviewsQuery = useQuery({
-    queryKey: ['monitoring-reviews', reviewsPaginationModel.page, reviewsPaginationModel.pageSize],
+    queryKey: [...MONITORING_REVIEWS_QUERY_KEY, reviewsPaginationModel.page, reviewsPaginationModel.pageSize],
     queryFn: () => fetchMonitoringReviewsPage(reviewsPaginationModel),
-    refetchInterval: 60 * 1000,
+    staleTime: MONITORING_STALE_TIME_MS,
+    refetchInterval: MONITORING_POLL_INTERVAL_MS,
+    placeholderData: (previousData) => previousData,
   });
 
   const readActivityQuery = useQuery({
-    queryKey: ['monitoring-notification-read-activity'],
+    queryKey: MONITORING_NOTIFICATION_READ_ACTIVITY_QUERY_KEY,
     queryFn: () => fetchNotificationReadActivity({ page_size: 8 }),
-    refetchInterval: 60 * 1000,
+    staleTime: MONITORING_STALE_TIME_MS,
+    refetchInterval: MONITORING_POLL_INTERVAL_MS,
+    placeholderData: (previousData) => previousData,
   });
 
   const userActivityQuery = useQuery({
-    queryKey: ['monitoring-user-activity'],
+    queryKey: MONITORING_USER_ACTIVITY_QUERY_KEY,
     queryFn: () => fetchUserActivity({ page_size: 8 }),
-    refetchInterval: 60 * 1000,
+    staleTime: MONITORING_STALE_TIME_MS,
+    refetchInterval: MONITORING_POLL_INTERVAL_MS,
+    placeholderData: (previousData) => previousData,
+  });
+
+  const diseaseReferenceQuery = useQuery({
+    queryKey: MONITORING_DISEASE_REFERENCE_QUERY_KEY,
+    queryFn: fetchMonitoringDiseaseReferenceData,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
   });
 
   const isInitialLoading = summaryQuery.isLoading && !summaryQuery.data;
   const recentReadActivity = useMemo(
     () => summaryQuery.data?.recent_read_activity ?? [],
     [summaryQuery.data],
+  );
+  const latestReviewRows = useMemo(
+    () => buildMonitoringReviewRows(reviewsQuery.data?.results ?? [], diseaseReferenceQuery.data ?? []),
+    [diseaseReferenceQuery.data, reviewsQuery.data?.results],
+  );
+  const latestReviewData = useMemo(
+    () => ({
+      count: reviewsQuery.data?.count ?? 0,
+      results: latestReviewRows,
+    }),
+    [latestReviewRows, reviewsQuery.data?.count],
   );
 
   if (isInitialLoading) {
@@ -444,7 +480,7 @@ export default function MonitoringPage() {
       <Grid container spacing={1.25} alignItems="stretch">
         <Grid size={{ xs: 12, lg: 7 }} sx={{ alignSelf: 'flex-start' }}>
           <LatestReviewsCard
-            reviewData={reviewsQuery.data}
+            reviewData={latestReviewData}
             isLoading={reviewsQuery.isLoading && !reviewsQuery.data}
             isFetching={reviewsQuery.isFetching}
             isError={reviewsQuery.isError}

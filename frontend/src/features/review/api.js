@@ -1,5 +1,7 @@
 import axiosClient from '@/api/axiosClient';
 
+export const REVIEW_WORKSPACE_QUERY_KEY = ['review-workspace'];
+
 async function fetchAllPages(initialUrl) {
   const items = [];
   let nextUrl = initialUrl;
@@ -14,18 +16,14 @@ async function fetchAllPages(initialUrl) {
 }
 
 export async function fetchReviewWorkspace() {
-  const [inspections, reviews, devices, diseases] = await Promise.all([
+  const [inspections, reviews] = await Promise.all([
     fetchAllPages('/api/v1/inspections/inspections/?page_size=100'),
     fetchAllPages('/api/v1/review/reviews/?page_size=100'),
-    fetchAllPages('/api/v1/devices/devices/?page_size=100'),
-    fetchAllPages('/api/v1/catalog/diseases/?page_size=100'),
   ]);
 
   return {
     inspections,
     reviews,
-    devices,
-    diseases,
   };
 }
 

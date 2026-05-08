@@ -7,17 +7,6 @@ import {
   isValidConfidenceScore,
 } from '@/features/dashboard/utils';
 
-async function fetchCount(url, params = {}) {
-  const { data } = await axiosClient.get(url, {
-    params: {
-      page_size: 1,
-      ...params,
-    },
-  });
-
-  return data.count ?? 0;
-}
-
 async function fetchPage(url, params = {}) {
   const { data } = await axiosClient.get(url, { params });
   return data;
@@ -156,53 +145,53 @@ function countRecentItems(items, dateField, days) {
   }).length;
 }
 
+function countBy(items, predicate) {
+  return items.reduce((count, item) => (predicate(item) ? count + 1 : count), 0);
+}
+
+export async function fetchDashboardReferenceData() {
+  const [devices, diseases] = await Promise.all([
+    fetchAllPages('/api/v1/devices/devices/'),
+    fetchAllPages('/api/v1/catalog/diseases/'),
+  ]);
+
+  return {
+    devices,
+    diseases,
+  };
+}
+
 export async function fetchDashboardData() {
   const [
     deviceCount,
     diseaseCount,
-    inspectionCount,
-    reviewCount,
-    acceptedReviewCount,
-    correctedReviewCount,
-    rejectedReviewCount,
-    newInspectionCount,
-    reviewedInspectionCount,
-    closedInspectionCount,
-    pendingProcessingCount,
-    processingInspectionCount,
-    completedProcessingCount,
-    failedProcessingCount,
-    leafInspectionCount,
-    fruitInspectionCount,
     allInspections,
     recentInspectionsPage,
-    devices,
-    diseases,
     allReviews,
   ] = await Promise.all([
-    fetchCount('/api/v1/devices/devices/'),
-    fetchCount('/api/v1/catalog/diseases/'),
-    fetchCount('/api/v1/inspections/inspections/'),
-    fetchCount('/api/v1/review/reviews/'),
-    fetchCount('/api/v1/review/reviews/', { decision: 'accepted' }),
-    fetchCount('/api/v1/review/reviews/', { decision: 'corrected' }),
-    fetchCount('/api/v1/review/reviews/', { decision: 'rejected' }),
-    fetchCount('/api/v1/inspections/inspections/', { status: 'new' }),
-    fetchCount('/api/v1/inspections/inspections/', { status: 'reviewed' }),
-    fetchCount('/api/v1/inspections/inspections/', { status: 'closed' }),
-    fetchCount('/api/v1/inspections/inspections/', { processing_status: 'pending' }),
-    fetchCount('/api/v1/inspections/inspections/', { processing_status: 'processing' }),
-    fetchCount('/api/v1/inspections/inspections/', { processing_status: 'completed' }),
-    fetchCount('/api/v1/inspections/inspections/', { processing_status: 'failed' }),
-    fetchCount('/api/v1/inspections/inspections/', { organ_type: 'leaf' }),
-    fetchCount('/api/v1/inspections/inspections/', { organ_type: 'fruit' }),
+    fetchPage('/api/v1/devices/devices/', { page_size: 1 }),
+    fetchPage('/api/v1/catalog/diseases/', { page_size: 1 }),
     fetchAllPages('/api/v1/inspections/inspections/'),
-    fetchPage('/api/v1/inspections/inspections/', { page_size: 5, ordering: '-captured_at' }),
-    fetchAllPages('/api/v1/devices/devices/'),
-    fetchAllPages('/api/v1/catalog/diseases/'),
+    fetchPage('/api/v1/inspections/inspections/', { page_size: 8, ordering: '-captured_at' }),
     fetchAllPages('/api/v1/review/reviews/'),
   ]);
 
+  const deviceCountValue = deviceCount.count ?? 0;
+  const diseaseCountValue = diseaseCount.count ?? 0;
+  const inspectionCount = allInspections.length;
+  const reviewCount = allReviews.length;
+  const acceptedReviewCount = countBy(allReviews, (review) => review.decision === 'accepted');
+  const correctedReviewCount = countBy(allReviews, (review) => review.decision === 'corrected');
+  const rejectedReviewCount = countBy(allReviews, (review) => review.decision === 'rejected');
+  const newInspectionCount = countBy(allInspections, (inspection) => inspection.status === 'new');
+  const reviewedInspectionCount = countBy(allInspections, (inspection) => inspection.status === 'reviewed');
+  const closedInspectionCount = countBy(allInspections, (inspection) => inspection.status === 'closed');
+  const pendingProcessingCount = countBy(allInspections, (inspection) => inspection.processing_status === 'pending');
+  const processingInspectionCount = countBy(allInspections, (inspection) => inspection.processing_status === 'processing');
+  const completedProcessingCount = countBy(allInspections, (inspection) => inspection.processing_status === 'completed');
+  const failedProcessingCount = countBy(allInspections, (inspection) => inspection.processing_status === 'failed');
+  const leafInspectionCount = countBy(allInspections, (inspection) => inspection.organ_type === 'leaf');
+  const fruitInspectionCount = countBy(allInspections, (inspection) => inspection.organ_type === 'fruit');
   const recentInspections = recentInspectionsPage.results ?? [];
   const reviewedInspectionIds = new Set(allReviews.map((review) => review.inspection));
   const eligibleInspectionIds = new Set(
@@ -212,8 +201,8 @@ export async function fetchDashboardData() {
   );
   const reviewedEligibleInspectionCount = allReviews.filter((review) => eligibleInspectionIds.has(review.inspection)).length;
   const pendingReviewQueue = buildPendingReviewQueue(recentInspections, reviewedInspectionIds, 6);
-  const averageConfidence = calculateAverageConfidence(recentInspections);
-  const recentInspectionCount = countRecentItems(recentInspections, 'captured_at', 7);
+  const averageConfidence = calculateAverageConfidence(allInspections);
+  const recentInspectionCount = countRecentItems(allInspections, 'captured_at', 7);
   const pendingReviewCount = countPendingReviewableInspections(allInspections, reviewedInspectionIds);
   const reviewCoverage = eligibleInspectionIds.size ? reviewedEligibleInspectionCount / eligibleInspectionIds.size : 0;
   const latestInspectionAt = recentInspections[0]?.captured_at ?? null;
@@ -223,8 +212,8 @@ export async function fetchDashboardData() {
     .sort((left, right) => right.localeCompare(left))[0] ?? null;
 
   const summary = {
-    deviceCount,
-    diseaseCount,
+    deviceCount: deviceCountValue,
+    diseaseCount: diseaseCountValue,
     inspectionCount,
     reviewCount,
     pendingReviewCount,
@@ -262,10 +251,8 @@ export async function fetchDashboardData() {
   return {
     summary,
     allInspections,
-    recentInspections: recentInspections.slice(0, 8),
+    recentInspections,
     pendingReviewQueue,
-    devices,
-    diseases,
     highlights: buildHighlights(summary),
   };
 }

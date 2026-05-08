@@ -1,5 +1,7 @@
 import axiosClient from '@/api/axiosClient';
 
+export const DEVICES_HIERARCHY_QUERY_KEY = ['devices-hierarchy'];
+
 export async function fetchDevicesHierarchy() {
   const sites = [];
   let nextUrl = '/api/v1/devices/sites/?page_size=100';
