@@ -1,4 +1,40 @@
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 120 29% 98%;
+    --foreground: 138 20% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 138 20% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 138 20% 12%;
+    --primary: 141 55% 27%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 132 19% 95%;
+    --secondary-foreground: 138 20% 12%;
+    --muted: 132 19% 95%;
+    --muted-foreground: 138 10% 39%;
+    --accent: 132 19% 95%;
+    --accent-foreground: 138 20% 12%;
+    --destructive: 0 67% 47%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 132 16% 87%;
+    --input: 132 16% 87%;
+    --ring: 141 55% 27%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
 
 *, *::before, *::after {
   box-sizing: border-box;

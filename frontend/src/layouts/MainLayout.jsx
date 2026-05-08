@@ -11,16 +11,14 @@ import {
   ListItem,
   ListItemButton,
   ListItemIcon,
-  ListItemText,
   Stack,
   Toolbar,
-  Typography,
+  Tooltip,
   Button,
 } from '@mui/material';
 import {
   AdminPanelSettings as AdminPanelSettingsIcon,
   Menu as MenuIcon,
-  MonitorHeart as MonitorHeartIcon,
   Dashboard as DashboardIcon,
   FactCheck as FactCheckIcon,
   Router as RouterIcon,
@@ -32,7 +30,7 @@ import {
 import azuraLogo from '@/assets/branding/azura_logo.png';
 import useAuthStore from '@/store/authStore';
 
-const drawerWidth = 216;
+const drawerWidth = 72;
 
 export default function MainLayout(props) {
   const { window } = props;
@@ -58,15 +56,15 @@ export default function MainLayout(props) {
 
   const roleName = user?.role?.name?.trim() || 'Operator';
   const normalizedRole = roleName.toLowerCase();
-  const isAdmin = normalizedRole === 'admin';
   const displayName = user?.username || 'Operator';
   const isAccountRoute = location.pathname.startsWith('/account');
+  const isDashboardRoute = location.pathname.startsWith('/dashboard');
   const roleIcon = normalizedRole === 'admin'
     ? <AdminPanelSettingsIcon fontSize="small" />
     : <PrecisionManufacturingIcon fontSize="small" />;
+
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-    ...(isAdmin ? [{ text: 'Monitoring', icon: <MonitorHeartIcon />, path: '/monitoring' }] : []),
     { text: 'Inspections', icon: <RuleFolderIcon />, path: '/inspections' },
     { text: 'Review', icon: <FactCheckIcon />, path: '/review' },
     { text: 'Devices', icon: <RouterIcon />, path: '/devices' },
@@ -74,39 +72,40 @@ export default function MainLayout(props) {
   ];
 
   const drawer = (
-    <Box sx={{ px: 1, py: 1.5 }}>
-      <Stack spacing={1.25}>
-        <ListItemButton
-          onClick={() => handleNavigation('/account')}
-          selected={isAccountRoute}
-          aria-label="Open my profile"
-          sx={{
-            px: 0.9,
-            py: 0.75,
-            mb: 0.2,
-            minHeight: 'unset',
-            borderRadius: 1,
-            bgcolor: isAccountRoute ? 'rgba(31, 106, 61, 0.08)' : 'background.paper',
-            border: '1px solid',
-            borderColor: isAccountRoute ? 'rgba(31, 106, 61, 0.16)' : 'divider',
-            boxShadow: '0 1px 4px rgba(18, 75, 47, 0.03)',
-            alignItems: 'center',
-            '&:hover': {
-              bgcolor: isAccountRoute ? 'rgba(31, 106, 61, 0.1)' : 'rgba(31, 106, 61, 0.04)',
-            },
-            '&.Mui-selected': {
-              bgcolor: 'rgba(31, 106, 61, 0.08)',
-            },
-          }}
-        >
-          <Stack direction="row" spacing={0.85} alignItems="center" sx={{ minWidth: 0 }}>
+    <Box sx={{ px: 0.75, py: 1.25 }}>
+      <Stack spacing={1.5} alignItems="center">
+        <Tooltip title={`${displayName} - ${roleName}`} placement="right">
+          <ListItemButton
+            onClick={() => handleNavigation('/account')}
+            selected={isAccountRoute}
+            aria-label="Open my profile"
+            sx={{
+              width: 48,
+              height: 48,
+              p: 0,
+              minHeight: 'unset',
+              borderRadius: 2,
+              bgcolor: isAccountRoute ? 'rgba(122, 226, 122, 0.1)' : 'rgba(255,255,255,0.04)',
+              border: '1px solid',
+              borderColor: isAccountRoute ? 'rgba(122, 226, 122, 0.16)' : 'rgba(255,255,255,0.08)',
+              boxShadow: '0 1px 4px rgba(0, 0, 0, 0.14)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              '&:hover': {
+                bgcolor: isAccountRoute ? 'rgba(122, 226, 122, 0.12)' : 'rgba(255,255,255,0.06)',
+              },
+              '&.Mui-selected': {
+                bgcolor: 'rgba(122, 226, 122, 0.1)',
+              },
+            }}
+          >
             <Box
               sx={{
-                width: 26,
-                height: 26,
-                borderRadius: 0.65,
-                bgcolor: 'rgba(31, 106, 61, 0.08)',
-                color: 'primary.dark',
+                width: 30,
+                height: 30,
+                borderRadius: 1,
+                bgcolor: 'rgba(122, 226, 122, 0.12)',
+                color: '#C8F5C8',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -115,53 +114,33 @@ export default function MainLayout(props) {
             >
               {roleIcon}
             </Box>
-            <Stack spacing={0.05} sx={{ minWidth: 0 }}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ letterSpacing: '0.08em', textTransform: 'uppercase', lineHeight: 1, fontSize: '0.64rem' }}
-              >
-                {normalizedRole === 'admin' ? 'Administrator' : 'Operator'}
-              </Typography>
-              <Typography
-                variant="subtitle2"
-                sx={{
-                  fontWeight: 700,
-                  fontSize: '0.8rem',
-                  lineHeight: 1.05,
-                  letterSpacing: '-0.01em',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {displayName}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1, fontSize: '0.68rem' }}>
-                {roleName}
-              </Typography>
-            </Stack>
-          </Stack>
-        </ListItemButton>
+          </ListItemButton>
+        </Tooltip>
 
-        <List sx={{ m: 0, p: 0 }}>
-            {menuItems.map((item) => {
-              const isActive = location.pathname.startsWith(item.path);
+        <List sx={{ m: 0, p: 0, width: '100%' }}>
+          {menuItems.map((item) => {
+            const isActive = location.pathname.startsWith(item.path);
 
-              return (
-                <ListItem key={item.text} disablePadding sx={{ mb: 0.25 }}>
+            return (
+              <ListItem key={item.text} disablePadding sx={{ mb: 0.6, justifyContent: 'center' }}>
+                <Tooltip title={item.text} placement="right">
                   <ListItemButton
                     selected={isActive}
                     onClick={() => handleNavigation(item.path)}
+                    aria-label={item.text}
                     sx={{
                       position: 'relative',
-                      minHeight: 40,
-                      px: 0.75,
-                      py: 0.625,
-                      borderRadius: 0.875,
-                      bgcolor: isActive ? 'rgba(31, 106, 61, 0.08)' : 'transparent',
+                      width: 48,
+                      height: 48,
+                      minHeight: 48,
+                      p: 0,
+                      borderRadius: 2,
+                      justifyContent: 'center',
+                      bgcolor: isActive ? 'rgba(122, 226, 122, 0.1)' : 'transparent',
+                      border: '1px solid',
+                      borderColor: isActive ? 'rgba(122, 226, 122, 0.16)' : 'transparent',
                       '&:hover': {
-                        bgcolor: isActive ? 'rgba(31, 106, 61, 0.1)' : 'rgba(31, 106, 61, 0.04)',
+                        bgcolor: isActive ? 'rgba(122, 226, 122, 0.12)' : 'rgba(255,255,255,0.05)',
                       },
                       '&::before': isActive
                         ? {
@@ -172,56 +151,37 @@ export default function MainLayout(props) {
                             bottom: 8,
                             width: 2,
                             borderRadius: 999,
-                            bgcolor: 'primary.main',
+                            bgcolor: '#7AE27A',
                           }
                         : undefined,
                     }}
                   >
                     <ListItemIcon
                       sx={{
-                        minWidth: 34,
-                        color: isActive ? 'primary.dark' : 'text.secondary',
+                        minWidth: 0,
+                        color: isActive ? '#D8F7D8' : 'rgba(226,236,231,0.64)',
+                        justifyContent: 'center',
                       }}
                     >
                       <Box
                         sx={{
-                          width: 22,
-                          height: 22,
+                          width: 28,
+                          height: 28,
                           display: 'grid',
                           placeItems: 'center',
-                          borderRadius: 0.75,
-                          bgcolor: isActive ? 'rgba(31, 106, 61, 0.1)' : 'transparent',
+                          borderRadius: 1,
+                          bgcolor: isActive ? 'rgba(122, 226, 122, 0.12)' : 'transparent',
                         }}
                       >
                         {item.icon}
                       </Box>
                     </ListItemIcon>
-                    <ListItemText
-                      primary={item.text}
-                      secondary={isActive ? 'Current section' : null}
-                      sx={{
-                        my: 0,
-                        '& .MuiListItemText-primary': {
-                          fontWeight: isActive ? 700 : 600,
-                          fontSize: '0.8rem',
-                          color: isActive ? 'text.primary' : 'text.secondary',
-                          letterSpacing: '-0.005em',
-                        },
-                        '& .MuiListItemText-secondary': {
-                          color: 'primary.dark',
-                          fontSize: '0.66rem',
-                          mt: 0.125,
-                          letterSpacing: '0.03em',
-                          textTransform: 'uppercase',
-                        },
-                      }}
-                    />
                   </ListItemButton>
-                </ListItem>
-              );
-            })}
+                </Tooltip>
+              </ListItem>
+            );
+          })}
         </List>
-
       </Stack>
     </Box>
   );
@@ -229,7 +189,7 @@ export default function MainLayout(props) {
   const container = window !== undefined ? () => window().document.body : undefined;
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', overflowX: 'hidden' }}>
       <CssBaseline />
       <AppBar
         position="fixed"
@@ -238,11 +198,13 @@ export default function MainLayout(props) {
           width: { md: `calc(100% - ${drawerWidth}px)` },
           ml: { md: `${drawerWidth}px` },
           borderBottom: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'rgba(255, 255, 255, 0.96)',
+          borderColor: isDashboardRoute ? 'rgba(255,255,255,0.08)' : 'divider',
+          bgcolor: isDashboardRoute ? 'rgba(8, 12, 11, 0.92)' : 'rgba(255, 255, 255, 0.96)',
+          color: isDashboardRoute ? '#F2F7F4' : 'text.primary',
+          backdropFilter: 'blur(18px)',
         }}
       >
-        <Toolbar sx={{ minHeight: 50, px: { xs: 1, sm: 1.25 } }}>
+        <Toolbar sx={{ minHeight: 48, px: { xs: 1, sm: 1.25 } }}>
           <IconButton
             color="inherit"
             aria-label="open drawer"
@@ -285,7 +247,9 @@ export default function MainLayout(props) {
               sx={{
                 fontSize: '0.68rem',
                 letterSpacing: '0.02em',
-                bgcolor: 'rgba(255,255,255,0.72)',
+                bgcolor: isDashboardRoute ? 'rgba(122, 226, 122, 0.08)' : 'rgba(255,255,255,0.72)',
+                color: isDashboardRoute ? '#C7F5C6' : undefined,
+                borderColor: isDashboardRoute ? 'rgba(122, 226, 122, 0.2)' : undefined,
               }}
             />
             <Button
@@ -316,7 +280,13 @@ export default function MainLayout(props) {
           }}
           sx={{
             display: { xs: 'block', md: 'none' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': {
+              boxSizing: 'border-box',
+              width: drawerWidth,
+              bgcolor: '#0C1110',
+              color: '#F2F7F4',
+              borderRight: '1px solid rgba(255,255,255,0.08)',
+            },
           }}
         >
           {drawer}
@@ -328,6 +298,11 @@ export default function MainLayout(props) {
             '& .MuiDrawer-paper': {
               boxSizing: 'border-box',
               width: drawerWidth,
+              overflowX: 'hidden',
+              bgcolor: '#0C1110',
+              color: '#F2F7F4',
+              borderRight: '1px solid rgba(255,255,255,0.08)',
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))',
             },
           }}
           open
@@ -341,16 +316,20 @@ export default function MainLayout(props) {
         sx={{
           flexGrow: 1,
           width: { md: `calc(100% - ${drawerWidth}px)` },
+          minWidth: 0,
           minHeight: '100vh',
+          overflowX: 'hidden',
           bgcolor: 'background.default',
         }}
       >
         <Toolbar sx={{ minHeight: 52 }} />
         <Box
           sx={{
-            px: { xs: 1, sm: 1.5, lg: 2 },
-            py: { xs: 1, sm: 1.25, lg: 1.5 },
-            maxWidth: 1400,
+            minWidth: 0,
+            overflowX: 'hidden',
+            px: { xs: 1, sm: 1.25, lg: isDashboardRoute ? 1.5 : 2 },
+            py: { xs: 1, sm: 1.25, lg: 1.25 },
+            maxWidth: isDashboardRoute ? 'none' : 1400,
           }}
         >
           <Outlet />

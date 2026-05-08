@@ -1,33 +1,37 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { Alert as MuiAlert, Snackbar } from '@mui/material';
 import {
-  Alert,
-  Button,
-  Grid,
-  Skeleton,
-  Snackbar,
-  Stack,
-  Typography,
-} from '@mui/material';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+  ClipboardList,
+  BellRing,
+  ClipboardCheck,
+  Cpu,
+  RefreshCcw,
+  ShieldAlert,
+} from 'lucide-react';
 import { fetchDashboardData, fetchDashboardReferenceData } from '@/features/dashboard/api';
-import DashboardMetricCard from '@/features/dashboard/DashboardMetricCard';
-import DashboardChartCard from '@/features/dashboard/DashboardChartCard';
 import {
   ActivityLineChart,
   DistributionBars,
   DonutBreakdown,
 } from '@/features/dashboard/DashboardCharts';
 import {
-  QuickActionsPanel,
-  RecentInspectionsTable,
-} from '@/features/dashboard/DashboardOperationsPanels';
-import { formatConfidencePercentage } from '@/features/dashboard/utils';
+  formatDashboardConfidence,
+  formatDashboardCount,
+  formatDashboardDateTime,
+} from '@/features/dashboard/components/dashboardPresentation';
+import DashboardEmptyState from '@/features/dashboard/components/DashboardEmptyState';
+import DashboardErrorState from '@/features/dashboard/components/DashboardErrorState';
+import DashboardLoadingState from '@/features/dashboard/components/DashboardLoadingState';
+import DashboardMetricCard from '@/features/dashboard/components/DashboardMetricCard';
+import DashboardSection from '@/features/dashboard/components/DashboardSection';
+import DashboardStatusBadge from '@/features/dashboard/components/DashboardStatusBadge';
+import { Button } from '@/components/ui/button';
 import {
   fetchNotificationsPage,
   fetchUnreadNotificationsCount,
@@ -35,54 +39,14 @@ import {
   markNotificationRead,
   NOTIFICATIONS_PAGE_SIZE,
 } from '@/features/notifications/api';
-import NotificationDashboardPanel from '@/features/notifications/NotificationDashboardPanel';
 import NotificationDetailDrawer from '@/features/notifications/NotificationDetailDrawer';
-import useAuthStore from '@/store/authStore';
 import { resolveInspectionDiseaseLabel } from '@/features/inspections/utils';
+import useAuthStore from '@/store/authStore';
 
 const NOTIFICATIONS_QUERY_KEY = ['dashboard-notifications'];
 const UNREAD_COUNT_QUERY_KEY = ['dashboard-notifications-unread-count'];
 const DASHBOARD_REFERENCE_QUERY_KEY = ['dashboard-reference-data'];
 const DASHBOARD_REFRESH_DEBOUNCE_MS = 15000;
-
-function DashboardSkeleton() {
-  return (
-    <Stack spacing={1.5}>
-      <Stack spacing={1}>
-        <Skeleton width={200} height={34} />
-        <Skeleton width={420} />
-      </Stack>
-
-      <Skeleton variant="rounded" height={200} />
-
-      <Grid container spacing={1.5}>
-        {[1, 2, 3, 4].map((item) => (
-          <Grid key={item} size={{ xs: 12, sm: 6, xl: 3 }}>
-            <Skeleton variant="rounded" height={96} />
-          </Grid>
-        ))}
-      </Grid>
-
-      <Grid container spacing={1.5}>
-        <Grid size={{ xs: 12, xl: 8 }}>
-          <Skeleton variant="rounded" height={228} />
-        </Grid>
-        <Grid size={{ xs: 12, xl: 4 }}>
-          <Skeleton variant="rounded" height={228} />
-        </Grid>
-      </Grid>
-
-      <Grid container spacing={1.5}>
-        <Grid size={{ xs: 12, lg: 7 }}>
-          <Skeleton variant="rounded" height={228} />
-        </Grid>
-        <Grid size={{ xs: 12, lg: 5 }}>
-          <Skeleton variant="rounded" height={228} />
-        </Grid>
-      </Grid>
-    </Stack>
-  );
-}
 
 function buildNotificationsWebSocketUrl(accessToken) {
   if (!accessToken || typeof window === 'undefined') {
@@ -232,6 +196,150 @@ function buildRelatedInspections(inspections, notification, disease, diseaseMap)
     .slice(0, 5);
 }
 
+function formatLastUpdatedLabel(value) {
+  if (!value) {
+    return 'Awaiting dashboard sync';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Awaiting dashboard sync';
+  }
+
+  return `Updated ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function MetricMeta({ label, value, tone = 'neutral' }) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+      <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2">
+        <p className="truncate text-sm font-semibold tracking-[-0.03em] text-slate-50">{value}</p>
+        <DashboardStatusBadge label={label} tone={tone} className="hidden shrink-0 sm:inline-flex" />
+      </div>
+    </div>
+  );
+}
+
+function NotificationPreviewItem({ notification, onOpenNotification }) {
+  const diseaseLabel = formatDiseaseLabel(notification.display_disease_label || notification.title);
+  const severityTone = notification.severity === 'high' ? 'alert' : 'review';
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenNotification(notification)}
+      className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.07]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <p className="truncate text-sm font-semibold text-slate-100">{diseaseLabel}</p>
+          <p className="line-clamp-1 text-xs leading-5 text-slate-400">{notification.message}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <DashboardStatusBadge
+            label={notification.is_read ? 'Read' : 'Unread'}
+            tone={notification.is_read ? 'neutral' : 'alert'}
+          />
+          <DashboardStatusBadge
+            label={notification.severity === 'high' ? 'High' : 'Alert'}
+            tone={severityTone}
+            className="mt-1 hidden sm:inline-flex"
+          />
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-[0.68rem] font-medium text-slate-500">
+        <span>{formatDashboardConfidence(notification.confidence_score)}</span>
+        <span>{formatDashboardDateTime(notification.created_at)}</span>
+      </div>
+    </button>
+  );
+}
+
+function ReviewPreviewItem({ inspection, onOpenReviewItem }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenReviewItem(inspection)}
+      className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.07]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <p className="truncate text-sm font-semibold text-slate-100">
+            {formatDiseaseLabel(inspection.top1_label || 'Manual review')}
+          </p>
+          <p className="line-clamp-1 text-xs leading-5 text-slate-400">
+            {inspection.device_label || 'Unknown device'}
+          </p>
+        </div>
+        <DashboardStatusBadge label="Review required" tone="review" />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-[0.68rem] font-medium text-slate-500">
+        <span>{formatDashboardConfidence(inspection.confidence_score)}</span>
+        <span>{inspection.organ_type || 'Unknown organ'}</span>
+        <span>{formatDashboardDateTime(inspection.captured_at)}</span>
+      </div>
+    </button>
+  );
+}
+
+function ProcessingPipeline({ data }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+
+  if (!data.some((item) => item.value > 0)) {
+    return (
+      <DashboardEmptyState
+        title="No processing data"
+        message="Processing status will appear here after inspection records are available."
+        badgeLabel="Pipeline"
+        framed={false}
+      />
+    );
+  }
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {data.map((item, index) => {
+        const percentage = total ? Math.round((item.value / total) * 100) : 0;
+
+        return (
+          <div
+            key={item.key || item.label}
+            className="relative min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+          >
+            <div className="flex items-center gap-3">
+              <span
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 text-sm font-semibold text-slate-950"
+                style={{ backgroundColor: item.color }}
+              >
+                {index + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-sm font-semibold text-slate-100">{item.label}</p>
+                  <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-50">
+                    {formatDashboardCount(item.value)}
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${Math.max(percentage, item.value > 0 ? 8 : 0)}%`,
+                      backgroundColor: item.color,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+            <p className="mt-2 text-[0.68rem] font-medium text-slate-500">{percentage}% of tracked inspections</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -246,6 +354,8 @@ export default function DashboardPage() {
     isError,
     error,
     refetch,
+    dataUpdatedAt,
+    isFetching,
   } = useQuery({
     queryKey: ['dashboard-operations'],
     queryFn: fetchDashboardData,
@@ -354,8 +464,8 @@ export default function DashboardPage() {
             setLiveAlert(payload.notification);
           }
 
-          // Coalesce live events so bursts of notifications do not immediately retrigger
-          // the full dashboard query on every socket message.
+          // These charts still depend on the existing Phase 2 dashboard summary shape,
+          // so live notification bursts are coalesced before refreshing the heavy query.
           if (!dashboardRefreshTimeoutId) {
             dashboardRefreshTimeoutId = window.setTimeout(() => {
               dashboardRefreshTimeoutId = null;
@@ -416,12 +526,17 @@ export default function DashboardPage() {
     ? latestNotification.is_read
       ? 'Read'
       : 'Unread'
-    : 'No Alert';
+    : 'No alert';
   const latestAlertConfidenceLabel = latestNotification
-    ? `Confidence ${formatConfidencePercentage(latestNotification.confidence_score)}`
+    ? `Confidence ${formatDashboardConfidence(latestNotification.confidence_score)}`
     : 'No current disease alert';
   const latestAlertDeviceLabel = resolveLatestAlertDeviceLabel(latestNotification);
   const latestAlertTimestampLabel = formatAlertTimestamp(latestNotification?.created_at);
+  const latestAlertRiskLabel = latestNotification
+    ? latestNotification.severity === 'high'
+      ? 'High risk'
+      : 'Medium risk'
+    : 'No risk';
 
   const deviceMap = useMemo(
     () => new Map((dashboardReferenceQuery.data?.devices ?? []).map((device) => [device.id, device])),
@@ -461,6 +576,11 @@ export default function DashboardPage() {
     [data?.allInspections, selectedDisease, selectedNotification, diseaseMap],
   );
 
+  const previewNotifications = notifications
+    .filter((notification) => notification.id !== latestNotification?.id)
+    .slice(0, 2);
+  const previewReviewItems = reviewActionItems.slice(0, 1);
+
   const handleOpenNotification = (notification) => {
     setSelectedNotificationId(notification.id);
     setIsDetailOpen(true);
@@ -473,6 +593,7 @@ export default function DashboardPage() {
   const handleCloseNotification = () => {
     setIsDetailOpen(false);
   };
+
   const handleOpenReviewItem = (inspection) => {
     navigate('/review', {
       state: {
@@ -480,35 +601,32 @@ export default function DashboardPage() {
       },
     });
   };
+
   const handleOpenReviewWorkspace = () => {
     navigate('/review');
   };
 
   if (isLoading || dashboardReferenceQuery.isLoading) {
-    return <DashboardSkeleton />;
+    return (
+      <DashboardLoadingState
+        title="Loading dashboard"
+        subtitle="Preparing live inspection, review, and alert summaries."
+      />
+    );
   }
 
   if (isError || dashboardReferenceQuery.isError) {
     const activeError = error || dashboardReferenceQuery.error;
 
     return (
-      <Alert
-        severity="error"
-        action={(
-          <Button
-            color="inherit"
-            size="small"
-            onClick={() => {
-              refetch();
-              dashboardReferenceQuery.refetch();
-            }}
-          >
-            Retry
-          </Button>
-        )}
-      >
-        {activeError?.response?.data?.detail || activeError?.message || 'Failed to load dashboard data.'}
-      </Alert>
+      <DashboardErrorState
+        title="Dashboard unavailable"
+        message={activeError?.response?.data?.detail || activeError?.message || 'Failed to load dashboard data.'}
+        onRetry={() => {
+          refetch();
+          dashboardReferenceQuery.refetch();
+        }}
+      />
     );
   }
 
@@ -516,225 +634,349 @@ export default function DashboardPage() {
 
   return (
     <>
-      <Stack spacing={1.35} sx={{ pb: 0.2 }}>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="center"
-          spacing={1}
-        >
-          <Typography
-            variant="h3"
-            sx={{
-              fontWeight: 700,
-              letterSpacing: '-0.03em',
-              fontSize: 'clamp(1.56rem, 1.26rem + 0.9vw, 2rem)',
-              lineHeight: 1.02,
-            }}
-          >
-            Dashboard
-          </Typography>
-          <Button
-            variant="text"
-            color="inherit"
-            startIcon={<RefreshRoundedIcon />}
-            onClick={() => {
-              refetch();
-              dashboardReferenceQuery.refetch();
-              notificationsQuery.refetch();
-              unreadCountQuery.refetch();
-            }}
-            size="small"
-          >
-            Refresh
-          </Button>
-        </Stack>
+      <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-hidden pb-3">
+        <div className="min-w-0 space-y-3 rounded-[26px] border border-[#18211f] bg-[radial-gradient(circle_at_top_left,rgba(34,88,57,0.2),transparent_30%),linear-gradient(180deg,#0b1110_0%,#080c0b_100%)] p-3 shadow-[0_24px_58px_rgba(0,0,0,0.32)] sm:p-4 xl:p-5">
+          <section className="min-w-0 rounded-[20px] border border-white/8 bg-[linear-gradient(90deg,rgba(255,255,255,0.045),rgba(255,255,255,0.018))] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] lg:px-5">
+            <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="hidden h-10 w-1.5 rounded-full bg-emerald-400/80 shadow-[0_0_18px_rgba(74,222,128,0.24)] sm:block" />
+                <div className="min-w-0">
+                  <h1 className="text-2xl font-semibold tracking-[-0.04em] text-slate-50 sm:text-[1.85rem]">
+                    Dashboard
+                  </h1>
+                  <p className="mt-0.5 max-w-3xl text-sm leading-5 text-slate-400">
+                    Real-time monitoring of tomato crop health and disease risk signals.
+                  </p>
+                </div>
+              </div>
 
-        <Grid container spacing={1.25}>
-          <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
-            <DashboardMetricCard
-              title="Total Devices"
-              value={summary.deviceCount}
-              helper="Active monitoring devices currently configured in the workspace."
-              accent="primary"
-              chipLabel="Devices"
-              trendLabel={summary.deviceCount > 0 ? 'Configured' : 'Unconfigured'}
-              footerLabel="Synced from live device inventory"
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
+                <DashboardStatusBadge
+                  label={latestNotification ? 'Alert active' : 'System stable'}
+                  tone={latestNotification ? 'alert' : 'completed'}
+                />
+                <span className="rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-red-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                  {latestNotification ? latestAlertRiskLabel : 'No active risk'}
+                </span>
+                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.12em] text-slate-400">
+                  {formatLastUpdatedLabel(dataUpdatedAt)}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    refetch();
+                    dashboardReferenceQuery.refetch();
+                    notificationsQuery.refetch();
+                    unreadCountQuery.refetch();
+                  }}
+                  disabled={isFetching || dashboardReferenceQuery.isFetching}
+                  className="h-8 rounded-full border-white/10 bg-emerald-500/10 px-3 text-xs text-emerald-100 hover:bg-emerald-500/20"
+                >
+                  <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          <section className="grid w-full min-w-0 grid-cols-[repeat(4,minmax(0,1fr))] gap-2.5 max-[900px]:grid-cols-2 max-[560px]:grid-cols-1 xl:gap-3">
             <DashboardMetricCard
               title="Total Inspections"
-              value={summary.inspectionCount}
-              helper="Inspection records currently tracked across the workspace."
-              accent="info"
+              value={formatDashboardCount(summary.inspectionCount)}
+              helper="Tracked inspection records across the workspace."
+              accent="primary"
+              icon={<ClipboardList className="h-5 w-5" />}
               chipLabel="Inspections"
-              trendLabel={`${summary.recentInspectionCount} in 7d sample`}
+              trendLabel={`${summary.recentInspectionCount} in 7d`}
               footerLabel={summary.inspectionFreshnessLabel}
+              className="min-w-0 w-full h-full"
             />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
             <DashboardMetricCard
-              title="Disease Catalog"
-              value={summary.diseaseCount}
-              helper="Reference diseases available for diagnosis and review."
-              accent="secondary"
-              chipLabel="Catalog"
-              trendLabel={summary.diseaseCount > 0 ? 'Reference ready' : 'No entries'}
-              footerLabel="Reference catalog ready for review"
+              title="Active Devices"
+              value={formatDashboardCount(summary.deviceCount)}
+              helper="Configured devices in the live hierarchy."
+              accent="info"
+              icon={<Cpu className="h-5 w-5" />}
+              chipLabel="Devices"
+              trendLabel={summary.deviceCount > 0 ? 'Configured' : 'Unconfigured'}
+              footerLabel="Synced from the current device registry"
+              className="min-w-0 w-full h-full"
             />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
             <DashboardMetricCard
-              title="Latest Disease Alert"
+              title="Disease Signal"
               value={latestAlertDiseaseLabel}
               helper={latestAlertDeviceLabel}
-              accent="alert"
+              accent={latestNotification ? 'alert' : 'neutral'}
+              icon={<ShieldAlert className="h-5 w-5" />}
               chipLabel={latestAlertReadStateLabel}
               trendLabel={latestAlertConfidenceLabel}
               footerLabel={latestAlertTimestampLabel}
+              className="min-w-0 w-full h-full border-red-400/25"
             />
-          </Grid>
-        </Grid>
+            <DashboardMetricCard
+              title="Pending Reviews"
+              value={formatDashboardCount(summary.pendingReviewCount)}
+              helper="Low-confidence inspections awaiting review."
+              accent="success"
+              icon={<ClipboardCheck className="h-5 w-5" />}
+              chipLabel="Review queue"
+              trendLabel={`${formatDashboardCount(summary.reviewCount)} completed`}
+              footerLabel="Review rule preserved from Phase 2"
+              className="min-w-0 w-full h-full"
+            />
+          </section>
 
-        <Grid container spacing={1.25} alignItems="stretch">
-          <Grid size={{ xs: 12, lg: 8 }}>
-            <NotificationDashboardPanel
-              notifications={notifications}
-              unreadCount={unreadCount}
-              isLoading={notificationsQuery.isLoading}
-              isError={notificationsQuery.isError}
-              error={notificationsQuery.error}
-              onRetry={() => {
-                notificationsQuery.refetch();
-                unreadCountQuery.refetch();
-              }}
-              onOpenNotification={handleOpenNotification}
-              onMarkAllRead={() => markAllReadMutation.mutate()}
-              isMarkingAllRead={markAllReadMutation.isPending}
-              reviewItems={reviewActionItems}
-              reviewCount={summary.pendingReviewCount}
-              onOpenReviewItem={handleOpenReviewItem}
-              onOpenReviewWorkspace={handleOpenReviewWorkspace}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, lg: 4 }}>
-            <DashboardChartCard
-              title="Quick Actions"
-              subtitle="Navigate directly to the operational areas that support this dashboard."
-              minHeight={240}
-              badgeLabel="Navigate"
+          <div className="grid min-w-0 items-stretch gap-3 lg:grid-cols-12">
+            <DashboardSection
+              tone={latestNotification ? 'alert' : 'subtle'}
+              className="h-full lg:col-span-4"
+              contentClassName="p-3"
             >
-              <QuickActionsPanel />
-            </DashboardChartCard>
-          </Grid>
-        </Grid>
+              {latestNotification ? (
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-end gap-2">
+                    <DashboardStatusBadge
+                      label={latestAlertReadStateLabel}
+                      tone={latestNotification.is_read ? 'neutral' : 'alert'}
+                      className="shrink-0"
+                    />
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="h-8 rounded-full px-3 text-xs"
+                      onClick={() => handleOpenNotification(latestNotification)}
+                    >
+                      Open details
+                    </Button>
+                  </div>
+                  <div className="rounded-2xl border border-red-400/25 bg-red-500/10 p-3 shadow-[0_0_28px_rgba(239,68,68,0.08)]">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-red-400/25 bg-red-500/15 text-red-200">
+                        <ShieldAlert className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <h2 className="min-w-0 truncate text-xl font-semibold tracking-[-0.05em] text-red-50">
+                            {latestAlertDiseaseLabel}
+                          </h2>
+                          <DashboardStatusBadge
+                            label={latestAlertRiskLabel}
+                            tone="alert"
+                            className="shrink-0"
+                          />
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] font-medium text-red-100/75">
+                          <span>{formatDashboardConfidence(latestNotification.confidence_score)}</span>
+                          <span className="text-red-200/35">/</span>
+                          <span className="max-w-[12rem] truncate">{latestAlertDeviceLabel}</span>
+                          <span className="text-red-200/35">/</span>
+                          <span>{latestAlertTimestampLabel}</span>
+                        </div>
+                        <p className="line-clamp-1 text-xs leading-5 text-red-100/65">
+                          {latestNotification.message}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <DashboardEmptyState
+                  title="No disease alerts"
+                  message="New disease-positive notifications will appear here as soon as they are detected."
+                  badgeLabel="Healthy queue"
+                  framed={false}
+                />
+              )}
+            </DashboardSection>
 
-        <Grid container spacing={1} alignItems="stretch">
-          <Grid size={{ xs: 12, lg: 7 }}>
-            <DashboardChartCard
-              title="Inspection Activity"
-              subtitle="Inspection volume by capture date across all available inspection records."
-              badgeLabel="Recent capture window"
-              minHeight={194}
+            <DashboardSection
+              title="Review & Notifications"
+              subtitle="Priority queue for unread alerts and low-confidence inspections that require human action."
+              badgeLabel="Priority queues"
               action={(
-                <Button component={RouterLink} to="/review" size="small" color="inherit">
-                  Open workspace
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => markAllReadMutation.mutate()}
+                  disabled={unreadCount === 0 || markAllReadMutation.isPending || notificationsQuery.isLoading}
+                  className="rounded-full border-white/10 bg-white/[0.05] text-slate-100 hover:bg-white/[0.1]"
+                >
+                  Mark all read
                 </Button>
               )}
+              className="h-full lg:col-span-8"
+              contentClassName="pt-0"
+            >
+              <div className="space-y-2.5">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <MetricMeta label="Unread alerts" value={formatDashboardCount(unreadCount)} tone={unreadCount > 0 ? 'alert' : 'neutral'} />
+                  <MetricMeta label="Pending reviews" value={formatDashboardCount(summary.pendingReviewCount)} tone={summary.pendingReviewCount > 0 ? 'review' : 'completed'} />
+                  <MetricMeta label="Reference diseases" value={formatDashboardCount(summary.diseaseCount)} tone="completed" />
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <BellRing className="h-4 w-4 text-red-300" />
+                        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-100">Latest alerts</h3>
+                      </div>
+                      <span className="text-xs font-medium text-slate-500">{formatDashboardCount(notifications.length)} shown</span>
+                    </div>
+                    {notificationsQuery.isError ? (
+                      <DashboardErrorState
+                        title="Alerts unavailable"
+                        message={notificationsQuery.error?.response?.data?.detail || notificationsQuery.error?.message || 'Failed to load disease alerts.'}
+                        onRetry={() => {
+                          notificationsQuery.refetch();
+                          unreadCountQuery.refetch();
+                        }}
+                        framed={false}
+                      />
+                    ) : previewNotifications.length === 0 ? (
+                      <DashboardEmptyState
+                        title="No additional alerts"
+                        message="The featured alert is shown in the card beside this queue."
+                        badgeLabel="Alerts"
+                        framed={false}
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        {previewNotifications.map((notification) => (
+                          <NotificationPreviewItem
+                            key={notification.id}
+                            notification={notification}
+                            onOpenNotification={handleOpenNotification}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <ClipboardCheck className="h-4 w-4 text-amber-300" />
+                        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-100">Review queue</h3>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-emerald-300 transition-colors hover:text-emerald-200"
+                        onClick={handleOpenReviewWorkspace}
+                      >
+                        Open workspace
+                      </button>
+                    </div>
+                    {previewReviewItems.length === 0 ? (
+                      <DashboardEmptyState
+                        title="Review queue is clear"
+                        message="Low-confidence inspections will appear here when manual review is required."
+                        badgeLabel="Review"
+                        framed={false}
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        {previewReviewItems.map((inspection) => (
+                          <ReviewPreviewItem
+                            key={inspection.id}
+                            inspection={inspection}
+                            onOpenReviewItem={handleOpenReviewItem}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </DashboardSection>
+
+            <DashboardSection
+              title="Inspection Activity"
+              subtitle="Capture volume across the current seven-day activity window."
+              badgeLabel="Recent activity"
+              className="h-full lg:col-span-12"
+              contentClassName="pt-0"
             >
               <ActivityLineChart data={summary.inspectionActivity} />
-            </DashboardChartCard>
-          </Grid>
-          <Grid size={{ xs: 12, lg: 5 }}>
-            <DashboardChartCard
+            </DashboardSection>
+          </div>
+
+          <div className="grid min-w-0 grid-cols-1 items-stretch gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <DashboardSection
+              title="Confidence Distribution"
+              subtitle="Current model signal spread across all available inspection records."
+              badgeLabel="Model signal"
+              className="h-full"
+              contentClassName="pt-0"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-400">Avg.</span>
+                  <span className="text-lg font-semibold tracking-[-0.04em] text-slate-50">
+                    {formatDashboardConfidence(summary.averageConfidence)}
+                  </span>
+                </div>
+                <DistributionBars
+                  data={summary.confidenceDistribution}
+                  valueFormatter={(value) => `${value} samples`}
+                />
+              </div>
+            </DashboardSection>
+
+            <DashboardSection
               title="Review Decisions"
-              subtitle="Accepted, corrected, and rejected review distribution."
+              subtitle="Accepted, corrected, and rejected outcomes."
               badgeLabel="Quality control"
-              minHeight={194}
+              className="h-full"
+              contentClassName="pt-0"
             >
               <DonutBreakdown
                 data={summary.reviewDecisionBreakdown}
                 centerLabel="Reviews"
                 centerValue={summary.reviewCount}
               />
-            </DashboardChartCard>
-          </Grid>
-        </Grid>
+            </DashboardSection>
 
-        <Grid container spacing={1.25} alignItems="stretch">
-          <Grid size={{ xs: 12, lg: 4 }}>
-            <DashboardChartCard
-              title="Inspection Status"
-              subtitle="Current operational state of inspection records."
-              badgeLabel="Lifecycle"
-            >
-              <DistributionBars data={summary.inspectionStatusBreakdown} />
-            </DashboardChartCard>
-          </Grid>
-          <Grid size={{ xs: 12, lg: 4 }}>
-            <DashboardChartCard
-              title="Processing Pipeline"
-              subtitle="Processing status distribution from the inspections backend."
-              badgeLabel="Execution"
-            >
-              <DistributionBars data={summary.processingStatusBreakdown} />
-            </DashboardChartCard>
-          </Grid>
-          <Grid size={{ xs: 12, lg: 4 }}>
-            <DashboardChartCard
+            <DashboardSection
               title="Organ Type Mix"
-              subtitle="Workload distribution between leaf and fruit inspections."
+              subtitle="Leaf versus fruit workload in the current inspection set."
               badgeLabel="Input mix"
+              className="h-full"
+              contentClassName="pt-0"
             >
               <DonutBreakdown
                 data={summary.organTypeBreakdown}
                 centerLabel="Organs"
                 centerValue={summary.inspectionCount}
               />
-            </DashboardChartCard>
-          </Grid>
-        </Grid>
+            </DashboardSection>
 
-        <Grid container spacing={1.25} alignItems="stretch">
-          <Grid size={{ xs: 12, lg: 8 }}>
-            <DashboardChartCard
-              title="Recent Inspections"
-              subtitle="Newest inspection records with resolved device and prediction context when available."
-              minHeight={220}
-              badgeLabel="Recent records"
+            <DashboardSection
+              title="Inspection Status"
+              subtitle="Lifecycle state across persisted inspections."
+              badgeLabel="Lifecycle"
+              className="h-full"
+              contentClassName="pt-0"
             >
-              <RecentInspectionsTable
-                inspections={data.recentInspections}
-                deviceMap={deviceMap}
-                diseaseMap={diseaseMap}
-              />
-            </DashboardChartCard>
-          </Grid>
-          <Grid size={{ xs: 12, lg: 4 }}>
-            <DashboardChartCard
-              title="Confidence Distribution"
-              subtitle="Confidence pattern across all available inspection records."
-              minHeight={220}
-              badgeLabel="Model signal"
-            >
-              <Stack spacing={1}>
-                <DashboardMetricCard
-                  title="Average Confidence"
-                  value={formatConfidencePercentage(summary.averageConfidence)}
-                  helper="Calculated from all inspection rows with valid normalized confidence values."
-                  accent="success"
-                  trendLabel={`${summary.inspectionCount} records`}
-                />
-                <DistributionBars
-                  data={summary.confidenceDistribution}
-                  valueFormatter={(value) => `${value} samples`}
-                />
-              </Stack>
-            </DashboardChartCard>
-          </Grid>
-        </Grid>
-      </Stack>
+              <DistributionBars data={summary.inspectionStatusBreakdown} />
+            </DashboardSection>
+          </div>
+
+          <DashboardSection
+            title="Processing Pipeline"
+            subtitle="Backend processing status across inspection records."
+            badgeLabel="Execution"
+            className="h-full"
+            contentClassName="pt-0"
+          >
+            <ProcessingPipeline data={summary.processingStatusBreakdown} />
+          </DashboardSection>
+        </div>
+      </div>
 
       <NotificationDetailDrawer
         open={isDetailOpen}
@@ -753,14 +995,14 @@ export default function DashboardPage() {
         onClose={() => setLiveAlert(null)}
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Alert
+        <MuiAlert
           onClose={() => setLiveAlert(null)}
           severity="error"
           variant="filled"
           sx={{ width: '100%' }}
         >
           {liveAlert?.title || 'New disease alert received.'}
-        </Alert>
+        </MuiAlert>
       </Snackbar>
     </>
   );
