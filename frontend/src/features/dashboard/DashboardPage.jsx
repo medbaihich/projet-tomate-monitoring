@@ -730,69 +730,6 @@ export default function DashboardPage() {
 
           <div className="grid min-w-0 items-stretch gap-3 lg:grid-cols-12">
             <DashboardSection
-              tone={latestNotification ? 'alert' : 'subtle'}
-              className="h-full lg:col-span-4"
-              contentClassName="p-3"
-            >
-              {latestNotification ? (
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-end gap-2">
-                    <DashboardStatusBadge
-                      label={latestAlertReadStateLabel}
-                      tone={latestNotification.is_read ? 'neutral' : 'alert'}
-                      className="shrink-0"
-                    />
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="h-8 rounded-full px-3 text-xs"
-                      onClick={() => handleOpenNotification(latestNotification)}
-                    >
-                      Open details
-                    </Button>
-                  </div>
-                  <div className="rounded-2xl border border-red-400/25 bg-red-500/10 p-3 shadow-[0_0_28px_rgba(239,68,68,0.08)]">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-red-400/25 bg-red-500/15 text-red-200">
-                        <ShieldAlert className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <h2 className="min-w-0 truncate text-xl font-semibold tracking-[-0.05em] text-red-50">
-                            {latestAlertDiseaseLabel}
-                          </h2>
-                          <DashboardStatusBadge
-                            label={latestAlertRiskLabel}
-                            tone="alert"
-                            className="shrink-0"
-                          />
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] font-medium text-red-100/75">
-                          <span>{formatDashboardConfidence(latestNotification.confidence_score)}</span>
-                          <span className="text-red-200/35">/</span>
-                          <span className="max-w-[12rem] truncate">{latestAlertDeviceLabel}</span>
-                          <span className="text-red-200/35">/</span>
-                          <span>{latestAlertTimestampLabel}</span>
-                        </div>
-                        <p className="line-clamp-1 text-xs leading-5 text-red-100/65">
-                          {latestNotification.message}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <DashboardEmptyState
-                  title="No disease alerts"
-                  message="New disease-positive notifications will appear here as soon as they are detected."
-                  badgeLabel="Healthy queue"
-                  framed={false}
-                />
-              )}
-            </DashboardSection>
-
-            <DashboardSection
               title="Review & Notifications"
               subtitle="Priority queue for unread alerts and low-confidence inspections that require human action."
               badgeLabel="Priority queues"
@@ -808,7 +745,7 @@ export default function DashboardPage() {
                   Mark all read
                 </Button>
               )}
-              className="h-full lg:col-span-8"
+              className="h-full lg:col-span-12"
               contentClassName="pt-0"
             >
               <div className="space-y-2.5">
@@ -840,7 +777,7 @@ export default function DashboardPage() {
                     ) : previewNotifications.length === 0 ? (
                       <DashboardEmptyState
                         title="No additional alerts"
-                        message="The featured alert is shown in the card beside this queue."
+                        message="Disease alert notifications will appear here when they are available."
                         badgeLabel="Alerts"
                         framed={false}
                       />

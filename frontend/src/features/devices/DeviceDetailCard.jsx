@@ -30,7 +30,7 @@ export default function DeviceDetailCard({ device, hierarchyPath }) {
       <PanelCard minHeight={220}>
         <StateBlock
           title="Select a device"
-          message="Choose a device node from the hierarchy to view its real backend fields."
+          message="Select a device row from the registry to view its backend fields."
           minHeight={170}
         />
       </PanelCard>
@@ -40,7 +40,7 @@ export default function DeviceDetailCard({ device, hierarchyPath }) {
   return (
     <PanelCard
       title="Device details"
-      subtitle="Resolved backend fields for the selected operational device."
+      subtitle="Backend fields for the selected registry row."
       badge={device.identifier}
     >
       <Stack spacing={1.5}>
@@ -58,15 +58,12 @@ export default function DeviceDetailCard({ device, hierarchyPath }) {
         <Divider />
 
         <Stack spacing={1.1}>
-          <DetailRow label="id" value={device.id} />
-          <DetailRow label="line" value={device.line} />
-          <DetailRow label="line_name" value={device.line_name} />
-          <DetailRow label="zone" value={device.zone} />
-          <DetailRow label="zone_name" value={device.zone_name} />
-          <DetailRow label="greenhouse_name" value={device.greenhouse_name} />
-          <DetailRow label="site_name" value={device.site_name} />
-          <DetailRow label="name" value={device.name} />
+          <DetailRow label="device" value={device.name} />
           <DetailRow label="identifier" value={device.identifier} />
+          <DetailRow label="site" value={resolveHierarchyValue(hierarchyPath?.siteName, device.site_name)} />
+          <DetailRow label="greenhouse" value={resolveHierarchyValue(hierarchyPath?.greenhouseName, device.greenhouse_name)} />
+          <DetailRow label="zone" value={resolveHierarchyValue(hierarchyPath?.zoneName, device.zone_name)} />
+          <DetailRow label="line" value={resolveHierarchyValue(hierarchyPath?.lineName, device.line_name)} />
           <DetailRow label="description" value={device.description} />
           <DetailRow label="created_at" value={device.created_at} />
           <DetailRow label="updated_at" value={device.updated_at} />
@@ -76,14 +73,14 @@ export default function DeviceDetailCard({ device, hierarchyPath }) {
 
         <Stack spacing={0.75}>
           <Typography variant="subtitle2" color="text.secondary">
-            Hierarchy
+            References
           </Typography>
           <Stack spacing={1.1}>
-            <DetailRow label="site" value={resolveHierarchyValue(hierarchyPath?.siteName, device.site_name)} />
-            <DetailRow label="greenhouse" value={resolveHierarchyValue(hierarchyPath?.greenhouseName, device.greenhouse_name)} />
-            <DetailRow label="zone" value={resolveHierarchyValue(hierarchyPath?.zoneName, device.zone_name)} />
-            <DetailRow label="line" value={resolveHierarchyValue(hierarchyPath?.lineName, device.line_name)} />
-            <DetailRow label="device" value={device.name || device.identifier} />
+            <DetailRow label="id" value={device.id} />
+            <DetailRow label="site_id" value={device.site} />
+            <DetailRow label="greenhouse_id" value={device.greenhouse} />
+            <DetailRow label="zone_id" value={device.zone} />
+            <DetailRow label="line_id" value={device.line} />
           </Stack>
         </Stack>
       </Stack>

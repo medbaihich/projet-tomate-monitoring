@@ -99,7 +99,16 @@ class DeviceViewSet(viewsets.ModelViewSet):
         "line__zone__greenhouse__name",
         "line__zone__greenhouse__site__name",
     )
-    ordering_fields = ("name", "identifier", "created_at", "updated_at")
+    ordering_fields = (
+        "name",
+        "identifier",
+        "line__name",
+        "line__zone__name",
+        "line__zone__greenhouse__name",
+        "line__zone__greenhouse__site__name",
+        "created_at",
+        "updated_at",
+    )
 
     def get_queryset(self):
         queryset = super().get_queryset()

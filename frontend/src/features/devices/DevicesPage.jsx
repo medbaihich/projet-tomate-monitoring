@@ -2,85 +2,93 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Alert,
-  Box,
   Button,
-  CircularProgress,
   Grid,
   Snackbar,
   Stack,
-  Typography,
 } from '@mui/material';
 import PageHeader from '@/components/ui/PageHeader';
 import PanelCard from '@/components/ui/PanelCard';
 import CreateDeviceDialog from '@/features/devices/CreateDeviceDialog';
-import StateBlock from '@/components/ui/StateBlock';
-import DevicesTree from '@/features/devices/DevicesTree';
+import DevicesTable from '@/features/devices/components/DevicesTable';
 import DeviceDetailCard from '@/features/devices/DeviceDetailCard';
 import {
   createDevice,
-  DEVICES_HIERARCHY_QUERY_KEY,
-  fetchDevicesHierarchy,
+  DEVICES_FILTER_OPTIONS_QUERY_KEY,
+  DEVICE_LINES_QUERY_KEY,
+  DEVICES_TABLE_QUERY_KEY,
+  fetchDevicesFilterOptions,
+  fetchDevicesPage,
+  fetchLines,
 } from '@/features/devices/api';
 import useAuthStore from '@/store/authStore';
 
-function buildDefaultExpandedItems(sites) {
-  const expandedItems = [];
+function toHierarchyPath(device) {
+  return {
+    siteName: device?.site_name || '',
+    greenhouseName: device?.greenhouse_name || '',
+    zoneName: device?.zone_name || '',
+    lineName: device?.line_name || '',
+  };
+}
 
-  for (const site of sites) {
-    expandedItems.push(`site:${site.id}`);
+function toLineOption(line, context) {
+  const zoneName = line.zone_name || 'Zone';
+  const code = line.code ? ` (${line.code})` : '';
 
-    for (const greenhouse of site.greenhouses) {
-      expandedItems.push(`greenhouse:${greenhouse.id}`);
+  return {
+    id: line.id,
+    label: context
+      ? `${context.siteName} / ${context.greenhouseName} / ${context.zoneName} / ${line.name}${code}`
+      : `${zoneName} / ${line.name}${code}`,
+  };
+}
 
-      for (const zone of greenhouse.zones) {
-        expandedItems.push(`zone:${zone.id}`);
+function applyUpdater(updater, currentValue) {
+  return typeof updater === 'function' ? updater(currentValue) : updater;
+}
 
-        for (const line of zone.lines) {
-          expandedItems.push(`line:${line.id}`);
-        }
-      }
+function addOption(map, id, label) {
+  if (!id || map.has(id)) {
+    return;
+  }
+
+  map.set(id, {
+    id,
+    label: label || 'N/A',
+  });
+}
+
+function sortOptions(options) {
+  return [...options].sort((first, second) => first.label.localeCompare(second.label));
+}
+
+function buildHierarchyOptions(devices) {
+  const sites = new Map();
+  const greenhouses = new Map();
+  const zones = new Map();
+  const lineContexts = new Map();
+
+  for (const device of devices) {
+    addOption(sites, device.site, device.site_name);
+    addOption(greenhouses, device.greenhouse, device.greenhouse_name);
+    addOption(zones, device.zone, device.zone_name);
+
+    if (device.line && !lineContexts.has(device.line)) {
+      lineContexts.set(device.line, {
+        siteName: device.site_name || 'Site',
+        greenhouseName: device.greenhouse_name || 'Greenhouse',
+        zoneName: device.zone_name || 'Zone',
+      });
     }
   }
 
-  return expandedItems;
-}
-
-function flattenLines(sites) {
-  return sites.flatMap((site) =>
-    site.greenhouses.flatMap((greenhouse) =>
-      greenhouse.zones.flatMap((zone) =>
-        zone.lines.map((line) => ({
-          id: line.id,
-          label: `${site.name} / ${greenhouse.name} / ${zone.name} / ${line.name}`,
-        })),
-      ),
-    ),
-  );
-}
-
-function findDeviceWithPath(sites, deviceId) {
-  for (const site of sites) {
-    for (const greenhouse of site.greenhouses) {
-      for (const zone of greenhouse.zones) {
-        for (const line of zone.lines) {
-          const device = line.devices.find((item) => item.id === deviceId);
-          if (device) {
-            return {
-              device,
-              path: {
-                siteName: site.name,
-                greenhouseName: greenhouse.name,
-                zoneName: zone.name,
-                lineName: line.name,
-              },
-            };
-          }
-        }
-      }
-    }
-  }
-
-  return null;
+  return {
+    siteOptions: sortOptions(sites.values()),
+    greenhouseOptions: sortOptions(greenhouses.values()),
+    zoneOptions: sortOptions(zones.values()),
+    lineContexts,
+  };
 }
 
 export default function DevicesPage() {
@@ -89,32 +97,107 @@ export default function DevicesPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createDialogSession, setCreateDialogSession] = useState(0);
   const [successMessage, setSuccessMessage] = useState('');
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
+  const [sorting, setSorting] = useState([]);
+  const [search, setSearch] = useState('');
+  const [siteFilter, setSiteFilter] = useState('');
+  const [greenhouseFilter, setGreenhouseFilter] = useState('');
+  const [zoneFilter, setZoneFilter] = useState('');
+  const [lineFilter, setLineFilter] = useState('');
   const roleName = useAuthStore((state) => state.user?.role?.name || '');
   const isAdmin = roleName.trim().toLowerCase() === 'admin';
-  const hierarchyQuery = useQuery({
-    queryKey: DEVICES_HIERARCHY_QUERY_KEY,
-    queryFn: fetchDevicesHierarchy,
+
+  const devicesQuery = useQuery({
+    queryKey: [
+      ...DEVICES_TABLE_QUERY_KEY,
+      {
+        pageIndex: pagination.pageIndex,
+        pageSize: pagination.pageSize,
+        search,
+        site: siteFilter,
+        greenhouse: greenhouseFilter,
+        zone: zoneFilter,
+        line: lineFilter,
+        sorting,
+      },
+    ],
+    queryFn: () => fetchDevicesPage({
+      pageIndex: pagination.pageIndex,
+      pageSize: pagination.pageSize,
+      search,
+      site: siteFilter,
+      greenhouse: greenhouseFilter,
+      zone: zoneFilter,
+      line: lineFilter,
+      sorting,
+    }),
     staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
-  const { data: sites = [], isLoading, isError, error, refetch } = hierarchyQuery;
 
-  const [expandedItems, setExpandedItems] = useState(null);
-
-  const defaultExpandedItems = useMemo(() => buildDefaultExpandedItems(sites), [sites]);
-  const availableLines = useMemo(() => flattenLines(sites), [sites]);
-  const visibleExpandedItems = expandedItems ?? defaultExpandedItems;
-
-  const selectedItemId = selectedDevice ? `device:${selectedDevice.id}` : null;
+  const linesQuery = useQuery({
+    queryKey: DEVICE_LINES_QUERY_KEY,
+    queryFn: fetchLines,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+  const filterOptionsQuery = useQuery({
+    queryKey: DEVICES_FILTER_OPTIONS_QUERY_KEY,
+    queryFn: fetchDevicesFilterOptions,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
+  const devicesData = devicesQuery.data ?? {};
+  const devices = devicesData.results ?? [];
+  const totalCount = devicesData.count ?? 0;
+  const hierarchyOptions = useMemo(
+    () => buildHierarchyOptions(filterOptionsQuery.data ?? []),
+    [filterOptionsQuery.data],
+  );
+  const availableLines = useMemo(
+    () => (linesQuery.data ?? []).map((line) =>
+      toLineOption(line, hierarchyOptions.lineContexts.get(line.id)),
+    ),
+    [hierarchyOptions.lineContexts, linesQuery.data],
+  );
 
   const handleSelectDevice = useCallback((device, path) => {
     setSelectedDevice(device);
-    setSelectedPath(path);
+    setSelectedPath(path ?? toHierarchyPath(device));
   }, []);
-  const handleExpandedItemsChange = useCallback((_, itemIds) => {
-    setExpandedItems(itemIds);
+  const handlePaginationChange = useCallback((updater) => {
+    setPagination((currentValue) => applyUpdater(updater, currentValue));
   }, []);
-  const handleSelectedItemsChange = useCallback(() => {}, []);
+  const handleSortingChange = useCallback((updater) => {
+    setSorting((currentValue) => applyUpdater(updater, currentValue));
+    setPagination((currentValue) => ({ ...currentValue, pageIndex: 0 }));
+  }, []);
+  const handleSearchChange = useCallback((nextSearch) => {
+    setSearch(nextSearch);
+    setPagination((currentValue) => ({ ...currentValue, pageIndex: 0 }));
+  }, []);
+  const handleSiteFilterChange = useCallback((nextSite) => {
+    setSiteFilter(nextSite);
+    setGreenhouseFilter('');
+    setZoneFilter('');
+    setLineFilter('');
+    setPagination((currentValue) => ({ ...currentValue, pageIndex: 0 }));
+  }, []);
+  const handleGreenhouseFilterChange = useCallback((nextGreenhouse) => {
+    setGreenhouseFilter(nextGreenhouse);
+    setZoneFilter('');
+    setLineFilter('');
+    setPagination((currentValue) => ({ ...currentValue, pageIndex: 0 }));
+  }, []);
+  const handleZoneFilterChange = useCallback((nextZone) => {
+    setZoneFilter(nextZone);
+    setLineFilter('');
+    setPagination((currentValue) => ({ ...currentValue, pageIndex: 0 }));
+  }, []);
+  const handleLineFilterChange = useCallback((nextLine) => {
+    setLineFilter(nextLine);
+    setPagination((currentValue) => ({ ...currentValue, pageIndex: 0 }));
+  }, []);
 
   const createDeviceMutation = useMutation({
     mutationFn: createDevice,
@@ -122,62 +205,21 @@ export default function DevicesPage() {
 
   const handleCreateDevice = async (payload) => {
     const createdDevice = await createDeviceMutation.mutateAsync(payload);
-    const refreshed = await hierarchyQuery.refetch();
-    const nextSites = refreshed.data ?? [];
-    const locatedDevice = findDeviceWithPath(nextSites, createdDevice.id);
-
-    if (locatedDevice) {
-      setSelectedDevice(locatedDevice.device);
-      setSelectedPath(locatedDevice.path);
-    }
+    await devicesQuery.refetch();
+    await filterOptionsQuery.refetch();
+    handleSelectDevice(createdDevice);
 
     setIsCreateDialogOpen(false);
     setSuccessMessage(`Device "${createdDevice.name}" created successfully.`);
     return createdDevice;
   };
 
-  if (isLoading) {
-    return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 360 }}>
-        <Stack spacing={2} alignItems="center">
-          <CircularProgress />
-          <Typography color="text.secondary">Loading devices hierarchy...</Typography>
-        </Stack>
-      </Box>
-    );
-  }
-
-  if (isError) {
-    return (
-      <Alert
-        severity="error"
-        action={
-          <Button color="inherit" size="small" onClick={() => refetch()}>
-            Retry
-          </Button>
-        }
-      >
-        {error?.response?.data?.detail || error?.message || 'Failed to load devices hierarchy.'}
-      </Alert>
-    );
-  }
-
-  if (sites.length === 0) {
-    return (
-      <StateBlock
-        title="No device hierarchy found"
-        message="The backend returned no sites, greenhouses, zones, lines, or devices yet."
-        minHeight={280}
-      />
-    );
-  }
-
   return (
     <Stack spacing={1.75}>
       <PageHeader
         eyebrow="Infrastructure"
         title="Devices"
-        subtitle="Live hierarchy from the devices API: Site -> Greenhouse -> Zone -> Line -> Device."
+        subtitle="Search, sort, and review operational devices across Site -> Greenhouse -> Zone -> Line."
         actions={isAdmin ? (
           <Button
             variant="contained"
@@ -185,7 +227,7 @@ export default function DevicesPage() {
               setCreateDialogSession((currentValue) => currentValue + 1);
               setIsCreateDialogOpen(true);
             }}
-            disabled={availableLines.length === 0}
+            disabled={availableLines.length === 0 || linesQuery.isLoading}
           >
             Add device
           </Button>
@@ -193,24 +235,59 @@ export default function DevicesPage() {
       />
 
       <Grid container spacing={1.75}>
-        <Grid size={{ xs: 12, lg: 7 }}>
+        <Grid size={{ xs: 12, xl: 8 }}>
           <PanelCard
-            title="Hierarchy"
-            subtitle="Operational device structure grouped by site, greenhouse, zone, and line."
-            badge={`${sites.length} site${sites.length === 1 ? '' : 's'}`}
+            title="Device registry"
+            subtitle="Compact table backed by the devices list API."
+            badge={`${totalCount} device${totalCount === 1 ? '' : 's'}`}
           >
-            <DevicesTree
-              sites={sites}
-              selectedItemId={selectedItemId}
-              expandedItems={visibleExpandedItems}
-              onExpandedItemsChange={handleExpandedItemsChange}
-              onSelectedItemsChange={handleSelectedItemsChange}
-              onSelectDevice={handleSelectDevice}
-            />
+            {devicesQuery.isError ? (
+              <Alert
+                severity="error"
+                action={
+                  <Button color="inherit" size="small" onClick={() => devicesQuery.refetch()}>
+                    Retry
+                  </Button>
+                }
+              >
+                {devicesQuery.error?.response?.data?.detail
+                  || devicesQuery.error?.message
+                  || 'Failed to load devices.'}
+              </Alert>
+            ) : (
+              <DevicesTable
+                devices={devices}
+                totalCount={totalCount}
+                isLoading={devicesQuery.isLoading}
+                isFetching={devicesQuery.isFetching}
+                pageIndex={pagination.pageIndex}
+                pageSize={pagination.pageSize}
+                sorting={sorting}
+                search={search}
+                siteFilter={siteFilter}
+                greenhouseFilter={greenhouseFilter}
+                zoneFilter={zoneFilter}
+                lineFilter={lineFilter}
+                siteOptions={hierarchyOptions.siteOptions}
+                greenhouseOptions={hierarchyOptions.greenhouseOptions}
+                zoneOptions={hierarchyOptions.zoneOptions}
+                lineOptions={availableLines}
+                selectedDeviceId={selectedDevice?.id || ''}
+                onPaginationChange={handlePaginationChange}
+                onSortingChange={handleSortingChange}
+                onSearchChange={handleSearchChange}
+                onSiteFilterChange={handleSiteFilterChange}
+                onGreenhouseFilterChange={handleGreenhouseFilterChange}
+                onZoneFilterChange={handleZoneFilterChange}
+                onLineFilterChange={handleLineFilterChange}
+                onSelectDevice={handleSelectDevice}
+                onRefresh={() => devicesQuery.refetch()}
+              />
+            )}
           </PanelCard>
         </Grid>
 
-        <Grid size={{ xs: 12, lg: 5 }}>
+        <Grid size={{ xs: 12, xl: 4 }}>
           <DeviceDetailCard
             device={selectedDevice}
             hierarchyPath={selectedPath}
