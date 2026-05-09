@@ -1,9 +1,13 @@
+from django.db.models import Q
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from apps.accounts.permissions import IsAuthenticatedReadOnlyOrAdminWrite
-from apps.core.api import apply_query_filters
+from apps.core.api import FALSE_VALUES, TRUE_VALUES, apply_query_filters
 from apps.devices.models import Device, Greenhouse, Line, Site, Zone
 from apps.devices.serializers import (
+    DeviceMapSerializer,
     DeviceSerializer,
     GreenhouseSerializer,
     LineSerializer,
@@ -123,3 +127,37 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 "identifier": "identifier",
             },
         )
+
+    @action(detail=False, methods=["get"], url_path="map")
+    def map(self, request):
+        queryset = apply_query_filters(
+            super().get_queryset(),
+            request.query_params,
+            {
+                "line": "line_id",
+                "zone": "line__zone_id",
+                "greenhouse": "line__zone__greenhouse_id",
+                "site": "line__zone__greenhouse__site_id",
+            },
+        )
+        location_query = (
+            Q(latitude__isnull=False, longitude__isnull=False)
+            | Q(local_x__isnull=False, local_y__isnull=False)
+        )
+        has_location = request.query_params.get("has_location")
+
+        if isinstance(has_location, str):
+            lowered = has_location.lower()
+            if lowered in TRUE_VALUES:
+                queryset = queryset.filter(location_query)
+            elif lowered in FALSE_VALUES:
+                queryset = queryset.exclude(location_query)
+
+        queryset = queryset.order_by("name", "identifier")
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = DeviceMapSerializer(page, many=True, context={"request": request})
+            return self.get_paginated_response(serializer.data)
+
+        serializer = DeviceMapSerializer(queryset, many=True, context={"request": request})
+        return Response(serializer.data)

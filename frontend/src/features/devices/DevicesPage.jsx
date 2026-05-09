@@ -3,7 +3,6 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Alert,
   Button,
-  Grid,
   Snackbar,
   Stack,
 } from '@mui/material';
@@ -11,7 +10,8 @@ import PageHeader from '@/components/ui/PageHeader';
 import PanelCard from '@/components/ui/PanelCard';
 import CreateDeviceDialog from '@/features/devices/CreateDeviceDialog';
 import DevicesTable from '@/features/devices/components/DevicesTable';
-import DeviceDetailCard from '@/features/devices/DeviceDetailCard';
+import DeviceDetailDrawer from '@/features/devices/DeviceDetailDrawer';
+import MapFoundation from '@/features/map/MapFoundation';
 import {
   createDevice,
   DEVICES_FILTER_OPTIONS_QUERY_KEY,
@@ -165,6 +165,10 @@ export default function DevicesPage() {
     setSelectedDevice(device);
     setSelectedPath(path ?? toHierarchyPath(device));
   }, []);
+  const handleCloseDeviceDetails = useCallback(() => {
+    setSelectedDevice(null);
+    setSelectedPath(null);
+  }, []);
   const handlePaginationChange = useCallback((updater) => {
     setPagination((currentValue) => applyUpdater(updater, currentValue));
   }, []);
@@ -234,66 +238,86 @@ export default function DevicesPage() {
         ) : null}
       />
 
-      <Grid container spacing={1.75}>
-        <Grid size={{ xs: 12, xl: 8 }}>
-          <PanelCard
-            title="Device registry"
-            subtitle="Compact table backed by the devices list API."
-            badge={`${totalCount} device${totalCount === 1 ? '' : 's'}`}
+      <PanelCard
+        title="Device registry"
+        subtitle="Compact table backed by the devices list API."
+        badge={`${totalCount} device${totalCount === 1 ? '' : 's'}`}
+      >
+        {devicesQuery.isError ? (
+          <Alert
+            severity="error"
+            action={
+              <Button color="inherit" size="small" onClick={() => devicesQuery.refetch()}>
+                Retry
+              </Button>
+            }
           >
-            {devicesQuery.isError ? (
-              <Alert
-                severity="error"
-                action={
-                  <Button color="inherit" size="small" onClick={() => devicesQuery.refetch()}>
-                    Retry
-                  </Button>
-                }
-              >
-                {devicesQuery.error?.response?.data?.detail
-                  || devicesQuery.error?.message
-                  || 'Failed to load devices.'}
-              </Alert>
-            ) : (
-              <DevicesTable
-                devices={devices}
-                totalCount={totalCount}
-                isLoading={devicesQuery.isLoading}
-                isFetching={devicesQuery.isFetching}
-                pageIndex={pagination.pageIndex}
-                pageSize={pagination.pageSize}
-                sorting={sorting}
-                search={search}
-                siteFilter={siteFilter}
-                greenhouseFilter={greenhouseFilter}
-                zoneFilter={zoneFilter}
-                lineFilter={lineFilter}
-                siteOptions={hierarchyOptions.siteOptions}
-                greenhouseOptions={hierarchyOptions.greenhouseOptions}
-                zoneOptions={hierarchyOptions.zoneOptions}
-                lineOptions={availableLines}
-                selectedDeviceId={selectedDevice?.id || ''}
-                onPaginationChange={handlePaginationChange}
-                onSortingChange={handleSortingChange}
-                onSearchChange={handleSearchChange}
-                onSiteFilterChange={handleSiteFilterChange}
-                onGreenhouseFilterChange={handleGreenhouseFilterChange}
-                onZoneFilterChange={handleZoneFilterChange}
-                onLineFilterChange={handleLineFilterChange}
-                onSelectDevice={handleSelectDevice}
-                onRefresh={() => devicesQuery.refetch()}
-              />
-            )}
-          </PanelCard>
-        </Grid>
-
-        <Grid size={{ xs: 12, xl: 4 }}>
-          <DeviceDetailCard
-            device={selectedDevice}
-            hierarchyPath={selectedPath}
+            {devicesQuery.error?.response?.data?.detail
+              || devicesQuery.error?.message
+              || 'Failed to load devices.'}
+          </Alert>
+        ) : (
+          <DevicesTable
+            devices={devices}
+            totalCount={totalCount}
+            isLoading={devicesQuery.isLoading}
+            isFetching={devicesQuery.isFetching}
+            pageIndex={pagination.pageIndex}
+            pageSize={pagination.pageSize}
+            sorting={sorting}
+            search={search}
+            siteFilter={siteFilter}
+            greenhouseFilter={greenhouseFilter}
+            zoneFilter={zoneFilter}
+            lineFilter={lineFilter}
+            siteOptions={hierarchyOptions.siteOptions}
+            greenhouseOptions={hierarchyOptions.greenhouseOptions}
+            zoneOptions={hierarchyOptions.zoneOptions}
+            lineOptions={availableLines}
+            selectedDeviceId={selectedDevice?.id || ''}
+            onPaginationChange={handlePaginationChange}
+            onSortingChange={handleSortingChange}
+            onSearchChange={handleSearchChange}
+            onSiteFilterChange={handleSiteFilterChange}
+            onGreenhouseFilterChange={handleGreenhouseFilterChange}
+            onZoneFilterChange={handleZoneFilterChange}
+            onLineFilterChange={handleLineFilterChange}
+            onSelectDevice={handleSelectDevice}
+            onRefresh={() => devicesQuery.refetch()}
           />
-        </Grid>
-      </Grid>
+        )}
+      </PanelCard>
+
+      <DeviceDetailDrawer
+        open={Boolean(selectedDevice)}
+        device={selectedDevice}
+        hierarchyPath={selectedPath}
+        onClose={handleCloseDeviceDetails}
+      />
+
+      <PanelCard
+        title="Device location overview"
+        subtitle="Map view using the same hierarchy filters as the device registry."
+      >
+        <MapFoundation
+          showFilters={false}
+          selectedDeviceId={selectedDevice?.id || ''}
+          onDeviceSelect={handleSelectDevice}
+          siteFilter={siteFilter}
+          greenhouseFilter={greenhouseFilter}
+          zoneFilter={zoneFilter}
+          lineFilter={lineFilter}
+          siteOptions={hierarchyOptions.siteOptions}
+          greenhouseOptions={hierarchyOptions.greenhouseOptions}
+          zoneOptions={hierarchyOptions.zoneOptions}
+          lineOptions={availableLines}
+          onSiteFilterChange={handleSiteFilterChange}
+          onGreenhouseFilterChange={handleGreenhouseFilterChange}
+          onZoneFilterChange={handleZoneFilterChange}
+          onLineFilterChange={handleLineFilterChange}
+        />
+      </PanelCard>
+
       <CreateDeviceDialog
         key={createDialogSession}
         open={isCreateDialogOpen}

@@ -75,12 +75,27 @@ class LineAdmin(admin.ModelAdmin):
 
 @admin.register(Device)
 class DeviceAdmin(admin.ModelAdmin):
-    list_display = ("name", "identifier", "line", "zone_name", "greenhouse_name", "site_name", "created_at", "updated_at")
+    list_display = (
+        "name",
+        "identifier",
+        "line",
+        "zone_name",
+        "greenhouse_name",
+        "site_name",
+        "map_label",
+        "latitude",
+        "longitude",
+        "local_x",
+        "local_y",
+        "created_at",
+        "updated_at",
+    )
     list_filter = ("line", "line__zone", "line__zone__greenhouse", "line__zone__greenhouse__site")
     search_fields = (
         "name",
         "identifier",
         "description",
+        "map_label",
         "line__name",
         "line__code",
         "line__zone__name",

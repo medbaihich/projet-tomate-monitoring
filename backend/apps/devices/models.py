@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import MaxValueValidator, MinValueValidator
 
 from apps.core.models import TimeStampedModel, UUIDPrimaryKeyModel
 
@@ -94,6 +95,19 @@ class Device(UUIDPrimaryKeyModel, TimeStampedModel):
     name = models.CharField(max_length=255)
     identifier = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
+    latitude = models.FloatField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(-90), MaxValueValidator(90)],
+    )
+    longitude = models.FloatField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(-180), MaxValueValidator(180)],
+    )
+    local_x = models.FloatField(blank=True, null=True)
+    local_y = models.FloatField(blank=True, null=True)
+    map_label = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
         ordering = ("name",)

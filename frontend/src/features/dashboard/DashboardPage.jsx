@@ -32,6 +32,7 @@ import DashboardMetricCard from '@/features/dashboard/components/DashboardMetric
 import DashboardSection from '@/features/dashboard/components/DashboardSection';
 import DashboardStatusBadge from '@/features/dashboard/components/DashboardStatusBadge';
 import { Button } from '@/components/ui/button';
+import MapFoundation from '@/features/map/MapFoundation';
 import {
   fetchNotificationsPage,
   fetchUnreadNotificationsCount,
@@ -635,7 +636,7 @@ export default function DashboardPage() {
   return (
     <>
       <div className="mx-auto min-w-0 max-w-[1600px] overflow-x-hidden pb-3">
-        <div className="min-w-0 space-y-3 rounded-[26px] border border-[#18211f] bg-[radial-gradient(circle_at_top_left,rgba(34,88,57,0.2),transparent_30%),linear-gradient(180deg,#0b1110_0%,#080c0b_100%)] p-3 shadow-[0_24px_58px_rgba(0,0,0,0.32)] sm:p-4 xl:p-5">
+        <div className="min-w-0 space-y-3">
           <section className="min-w-0 rounded-[20px] border border-white/8 bg-[linear-gradient(90deg,rgba(255,255,255,0.045),rgba(255,255,255,0.018))] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] lg:px-5">
             <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex min-w-0 items-center gap-3">
@@ -727,6 +728,16 @@ export default function DashboardPage() {
               className="min-w-0 w-full h-full"
             />
           </section>
+
+          <DashboardSection
+            title="Device Location Overview"
+            subtitle="Approximate mapped device positions across the current hierarchy."
+            badgeLabel="Map foundation"
+            className="h-full"
+            contentClassName="pt-0"
+          >
+            <MapFoundation />
+          </DashboardSection>
 
           <div className="grid min-w-0 items-stretch gap-3 lg:grid-cols-12">
             <DashboardSection

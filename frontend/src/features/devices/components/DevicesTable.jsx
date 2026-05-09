@@ -175,7 +175,10 @@ export default function DevicesTable({
             variant="outline"
             size="sm"
             className="gap-2"
-            onClick={() => onSelectDevice(row.original)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelectDevice(row.original);
+            }}
           >
             <Eye className="h-4 w-4" aria-hidden="true" />
             View

@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { ThemeProvider, CssBaseline } from '@mui/material'
 import theme from './theme'
 import App from './App'
+import 'leaflet/dist/leaflet.css'
 import './index.css'
 
 

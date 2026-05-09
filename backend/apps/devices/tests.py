@@ -128,6 +128,106 @@ class DevicesRolePermissionTests(APITestCase):
         self.assertEqual(response.data["greenhouse_name"], self.greenhouse.name)
         self.assertEqual(str(response.data["site"]), str(self.site.id))
         self.assertEqual(response.data["site_name"], self.site.name)
+        self.assertIsNone(response.data["latitude"])
+        self.assertIsNone(response.data["longitude"])
+        self.assertIsNone(response.data["local_x"])
+        self.assertIsNone(response.data["local_y"])
+        self.assertIsNone(response.data["map_label"])
+
+    def test_admin_can_create_device_with_optional_map_location_fields(self):
+        self.client.force_authenticate(user=self.admin_user)
+
+        response = self.client.post(
+            reverse("device-list"),
+            {
+                "line": str(self.line.id),
+                "name": "Camera Node 3",
+                "identifier": "camera-node-3",
+                "description": "Mapped camera",
+                "latitude": 34.125,
+                "longitude": -6.831,
+                "local_x": 42.5,
+                "local_y": 61.25,
+                "map_label": "North row camera",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["latitude"], 34.125)
+        self.assertEqual(response.data["longitude"], -6.831)
+        self.assertEqual(response.data["local_x"], 42.5)
+        self.assertEqual(response.data["local_y"], 61.25)
+        self.assertEqual(response.data["map_label"], "North row camera")
+
+    def test_device_location_rejects_invalid_latitude(self):
+        self.client.force_authenticate(user=self.admin_user)
+
+        response = self.client.patch(
+            reverse("device-detail", args=[self.device.id]),
+            {"latitude": 120},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("latitude", response.data)
+
+    def test_device_map_endpoint_returns_map_ready_shape(self):
+        self.device.latitude = 34.125
+        self.device.longitude = -6.831
+        self.device.local_x = 42.5
+        self.device.local_y = 61.25
+        self.device.map_label = "North row camera"
+        self.device.save()
+        self.client.force_authenticate(user=self.operator_user)
+
+        response = self.client.get(reverse("device-map"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        device = response.data["results"][0]
+        self.assertEqual(device["id"], str(self.device.id))
+        self.assertEqual(device["name"], self.device.name)
+        self.assertEqual(device["identifier"], self.device.identifier)
+        self.assertEqual(device["latitude"], 34.125)
+        self.assertEqual(device["longitude"], -6.831)
+        self.assertEqual(device["local_x"], 42.5)
+        self.assertEqual(device["local_y"], 61.25)
+        self.assertEqual(device["map_label"], "North row camera")
+        self.assertEqual(str(device["line"]), str(self.line.id))
+        self.assertEqual(device["line_name"], self.line.name)
+        self.assertEqual(str(device["zone"]), str(self.zone.id))
+        self.assertEqual(device["zone_name"], self.zone.name)
+        self.assertEqual(str(device["greenhouse"]), str(self.greenhouse.id))
+        self.assertEqual(device["greenhouse_name"], self.greenhouse.name)
+        self.assertEqual(str(device["site"]), str(self.site.id))
+        self.assertEqual(device["site_name"], self.site.name)
+        self.assertTrue(device["has_location"])
+
+    def test_device_map_endpoint_supports_hierarchy_and_location_filters(self):
+        Device.objects.create(
+            line=self.line,
+            name="Camera Node 2",
+            identifier="camera-node-2",
+        )
+        self.device.latitude = 34.125
+        self.device.longitude = -6.831
+        self.device.save()
+        self.client.force_authenticate(user=self.operator_user)
+
+        response = self.client.get(
+            reverse("device-map"),
+            {
+                "site": str(self.site.id),
+                "greenhouse": str(self.greenhouse.id),
+                "zone": str(self.zone.id),
+                "line": str(self.line.id),
+                "has_location": "true",
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], str(self.device.id))
 
     def test_device_list_supports_compatible_zone_filter(self):
         self.client.force_authenticate(user=self.operator_user)

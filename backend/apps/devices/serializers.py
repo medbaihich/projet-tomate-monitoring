@@ -27,10 +27,55 @@ class DeviceSerializer(serializers.ModelSerializer):
             "name",
             "identifier",
             "description",
+            "latitude",
+            "longitude",
+            "local_x",
+            "local_y",
+            "map_label",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
+
+
+class DeviceMapSerializer(serializers.ModelSerializer):
+    line_name = serializers.CharField(source="line.name", read_only=True)
+    zone = serializers.UUIDField(source="line.zone_id", read_only=True)
+    zone_name = serializers.CharField(source="line.zone.name", read_only=True)
+    greenhouse = serializers.UUIDField(source="line.zone.greenhouse_id", read_only=True)
+    greenhouse_name = serializers.CharField(source="line.zone.greenhouse.name", read_only=True)
+    site = serializers.UUIDField(source="line.zone.greenhouse.site_id", read_only=True)
+    site_name = serializers.CharField(source="line.zone.greenhouse.site.name", read_only=True)
+    has_location = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Device
+        fields = (
+            "id",
+            "name",
+            "identifier",
+            "latitude",
+            "longitude",
+            "local_x",
+            "local_y",
+            "map_label",
+            "line",
+            "line_name",
+            "zone",
+            "zone_name",
+            "greenhouse",
+            "greenhouse_name",
+            "site",
+            "site_name",
+            "updated_at",
+            "has_location",
+        )
+        read_only_fields = fields
+
+    def get_has_location(self, obj):
+        has_geo_position = obj.latitude is not None and obj.longitude is not None
+        has_local_position = obj.local_x is not None and obj.local_y is not None
+        return has_geo_position or has_local_position
 
 
 class LineSerializer(serializers.ModelSerializer):
