@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import PanelCard from '@/components/ui/PanelCard';
 import StateBlock from '@/components/ui/StateBlock';
+import DiseaseMapProfilePanel from '@/features/catalog/DiseaseMapProfilePanel';
 
 function ValueBlock({ label, value }) {
   return (
@@ -73,6 +74,8 @@ export default function DiseaseDetailPanel({ disease }) {
             {disease.name}
           </Typography>
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+            <Chip size="small" color="primary" label={`Organ ${disease.organ_type || 'N/A'}`} />
+            <Chip size="small" variant="outlined" label={`AI ${disease.ai_label || 'N/A'}`} />
             <Chip size="small" label={`Slug ${disease.slug}`} />
             <Chip size="small" variant="outlined" label={`${disease.causes.length} cause${disease.causes.length === 1 ? '' : 's'}`} />
           </Stack>
@@ -82,11 +85,17 @@ export default function DiseaseDetailPanel({ disease }) {
 
         <Stack spacing={1.1}>
           <ValueBlock label="summary" value={disease.summary} />
+          <ValueBlock label="organ_type" value={disease.organ_type} />
+          <ValueBlock label="ai_label" value={disease.ai_label} />
           <ValueBlock label="symptoms" value={disease.symptoms} />
           <ValueBlock label="prevention" value={disease.prevention} />
           <ValueBlock label="created_at" value={disease.created_at} />
           <ValueBlock label="updated_at" value={disease.updated_at} />
         </Stack>
+
+        <Divider />
+
+        <DiseaseMapProfilePanel profile={disease.map_profile} />
 
         <Divider />
 

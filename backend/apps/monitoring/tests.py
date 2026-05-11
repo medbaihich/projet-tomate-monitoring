@@ -55,7 +55,10 @@ class MonitoringApiTests(APITestCase):
             name="leaf-monitor-index",
             organ_type=InferenceIndex.OrganType.LEAF,
         )
-        self.disease = Disease.objects.create(name="Early Blight", slug="early-blight")
+        self.disease = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="early_blight",
+        )
         self.inspection = Inspection.objects.create(
             device=self.device,
             inference_index=self.inference_index,

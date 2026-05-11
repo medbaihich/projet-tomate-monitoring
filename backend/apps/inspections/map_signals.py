@@ -1,22 +1,19 @@
 from collections import defaultdict
 from hashlib import sha1
+from uuid import UUID
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.db.models import Q
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
-from apps.inspections.disease_zone_profiles import (
-    ZONE_POLICY_NO_ZONE,
-    calculate_zone_radius_meters,
-    get_disease_zone_profile,
-    normalize_disease_key,
-)
+from apps.catalog.models import DiseaseMapProfile, normalize_ai_label
 from apps.inspections.models import Inspection
 
 
 HEALTHY_DISEASE_KEY = "healthy"
 HIGH_SEVERITY_THRESHOLD = 0.85
-RADIUS_REASON = "Estimated from disease profile, confidence, signal count, and recency."
+RADIUS_REASON = "Configured from the active disease map profile as approximate visualization/risk guidance."
 
 
 def build_dashboard_map_signals(query_params):
@@ -56,6 +53,8 @@ def _base_queryset():
             "device__line__zone__greenhouse",
             "device__line__zone__greenhouse__site",
             "predicted_disease",
+            "predicted_disease__map_profile",
+            "inference_index",
         )
         .filter(processing_status=Inspection.ProcessingStatus.COMPLETED)
         .order_by("-captured_at", "-created_at")
@@ -77,6 +76,8 @@ def _apply_filters(queryset, query_params):
         "line": "device__line_id",
         "device": "device_id",
         "organ_type": "organ_type",
+        "status": "status",
+        "processing_status": "processing_status",
     }
     for param_name, lookup in field_filters.items():
         value = query_params.get(param_name)
@@ -85,7 +86,11 @@ def _apply_filters(queryset, query_params):
 
     disease_id = query_params.get("disease")
     if disease_id:
-        queryset = queryset.filter(predicted_disease_id=disease_id)
+        queryset = _filter_by_disease_value(
+            queryset,
+            disease_id,
+            organ_type=query_params.get("organ_type"),
+        )
 
     min_confidence = query_params.get("min_confidence")
     if min_confidence:
@@ -116,21 +121,11 @@ def _apply_filters(queryset, query_params):
 
     disease_name = query_params.get("disease_name")
     if disease_name:
-        requested_key = normalize_disease_key(disease_name)
-        matching_profile = get_disease_zone_profile(requested_key)
-        allowed_keys = {requested_key}
-        if matching_profile is not None:
-            allowed_keys.add(matching_profile.key)
-            allowed_keys.update(normalize_disease_key(alias) for alias in matching_profile.aliases)
-            allowed_keys.add(normalize_disease_key(matching_profile.display_name))
-
-        inspection_ids = [
-            inspection.id
-            for inspection in queryset
-            if _resolve_profile(inspection) is not None
-            and _resolve_disease_key(inspection) in allowed_keys
-        ]
-        queryset = queryset.filter(id__in=inspection_ids)
+        queryset = _filter_by_disease_value(
+            queryset,
+            disease_name,
+            organ_type=query_params.get("organ_type"),
+        )
 
     disease_positive_ids = [
         inspection.id
@@ -138,6 +133,31 @@ def _apply_filters(queryset, query_params):
         if _is_disease_positive(inspection)
     ]
     return queryset.filter(id__in=disease_positive_ids)
+
+
+def _filter_by_disease_value(queryset, value, *, organ_type=None):
+    raw_value = str(value).strip()
+    if not raw_value:
+        return queryset
+
+    disease_query = (
+        Q(predicted_disease__slug__iexact=raw_value)
+        | Q(predicted_disease__name__iexact=raw_value)
+    )
+
+    normalized_value = normalize_ai_label(raw_value)
+    if normalized_value:
+        disease_query |= Q(predicted_disease__ai_label=normalized_value)
+
+    try:
+        disease_query |= Q(predicted_disease_id=UUID(raw_value))
+    except (TypeError, ValueError):
+        pass
+
+    if organ_type:
+        disease_query &= Q(predicted_disease__organ_type=organ_type)
+
+    return queryset.filter(disease_query)
 
 
 def _parse_datetime_param(value, field_name):
@@ -167,31 +187,97 @@ def _resolve_display_label(inspection):
 
 
 def _resolve_profile(inspection):
-    if inspection.predicted_disease is not None:
-        profile = get_disease_zone_profile(
-            inspection.predicted_disease.slug,
-            inspection.organ_type,
-        )
-        if profile is not None:
-            return profile
+    if inspection.predicted_disease is None:
+        return None
 
-        return get_disease_zone_profile(
-            inspection.predicted_disease.name,
-            inspection.organ_type,
-        )
-
-    return get_disease_zone_profile(inspection.top1_label, inspection.organ_type)
+    try:
+        return inspection.predicted_disease.map_profile
+    except ObjectDoesNotExist:
+        return None
 
 
 def _resolve_disease_key(inspection):
-    profile = _resolve_profile(inspection)
-    if profile is not None:
-        return profile.key
-
     if inspection.predicted_disease is not None:
-        return normalize_disease_key(inspection.predicted_disease.slug or inspection.predicted_disease.name)
+        return normalize_ai_label(
+            inspection.predicted_disease.ai_label
+            or inspection.predicted_disease.slug
+            or inspection.predicted_disease.name
+        )
 
-    return normalize_disease_key(inspection.top1_label)
+    return normalize_ai_label(inspection.top1_label)
+
+
+def _resolve_organ_type(inspection):
+    if inspection.predicted_disease is not None:
+        return inspection.predicted_disease.organ_type
+
+    return inspection.organ_type
+
+
+def _effective_zone_type(profile):
+    if profile is None:
+        return DiseaseMapProfile.ZoneType.NONE
+
+    if (
+        not profile.is_infectious
+        and profile.zone_type == DiseaseMapProfile.ZoneType.INFECTION_ZONE
+    ):
+        if profile.spread_category == DiseaseMapProfile.SpreadCategory.PHYSIOLOGICAL:
+            return DiseaseMapProfile.ZoneType.AGRONOMIC_RISK_ZONE
+        return DiseaseMapProfile.ZoneType.RISK_ZONE
+
+    return profile.zone_type
+
+
+def _profile_creates_zone(profile):
+    if profile is None or not profile.is_active:
+        return False
+
+    return (
+        _effective_zone_type(profile) != DiseaseMapProfile.ZoneType.NONE
+        and profile.spread_radius_m > 0
+    )
+
+
+def _profile_response_fields(profile, inspection):
+    profile_missing = inspection.predicted_disease_id is not None and profile is None
+    if profile is None:
+        return {
+            "is_infectious": False,
+            "spread_category": DiseaseMapProfile.SpreadCategory.NONE,
+            "transmission_mode": DiseaseMapProfile.TransmissionMode.NONE,
+            "zone_type": DiseaseMapProfile.ZoneType.NONE,
+            "spread_radius_m": 0,
+            "risk_level": DiseaseMapProfile.RiskLevel.LOW,
+            "map_color": "",
+            "map_label": "",
+            "short_map_description": "",
+            "profile_missing": profile_missing,
+            "profile_inactive": False,
+            # Legacy response aliases retained for the current frontend.
+            "spread_type": DiseaseMapProfile.SpreadCategory.NONE,
+            "zone_policy": DiseaseMapProfile.ZoneType.NONE,
+            "evidence_level": "profile_missing" if profile_missing else "not_available",
+        }
+
+    zone_type = _effective_zone_type(profile)
+    return {
+        "is_infectious": profile.is_infectious,
+        "spread_category": profile.spread_category,
+        "transmission_mode": profile.transmission_mode,
+        "zone_type": zone_type,
+        "spread_radius_m": profile.spread_radius_m,
+        "risk_level": profile.risk_level,
+        "map_color": profile.map_color,
+        "map_label": profile.map_label,
+        "short_map_description": profile.short_map_description,
+        "profile_missing": False,
+        "profile_inactive": not profile.is_active,
+        # Legacy response aliases retained for the current frontend.
+        "spread_type": profile.spread_category,
+        "zone_policy": zone_type,
+        "evidence_level": "db_profile",
+    }
 
 
 def _build_available_diseases(inspections):
@@ -205,23 +291,40 @@ def _build_available_diseases(inspections):
 
         profile = _resolve_profile(inspection)
         disease_id = str(inspection.predicted_disease_id) if inspection.predicted_disease_id else ""
-        disease_counts[disease_key] += 1
+        response_profile = _profile_response_fields(profile, inspection)
+        record_key = (_resolve_organ_type(inspection), disease_key)
+        disease_counts[record_key] += 1
         disease_records.setdefault(
-            disease_key,
+            record_key,
             {
                 "id": disease_id,
                 "key": disease_key,
                 "name": _resolve_display_label(inspection) or disease_key,
-                "zone_policy": profile.zone_policy if profile else ZONE_POLICY_NO_ZONE,
+                "organ_type": _resolve_organ_type(inspection),
+                "ai_label": disease_key,
+                "zone_policy": response_profile["zone_policy"],
+                "zone_type": response_profile["zone_type"],
+                "is_infectious": response_profile["is_infectious"],
+                "spread_category": response_profile["spread_category"],
+                "transmission_mode": response_profile["transmission_mode"],
+                "risk_level": response_profile["risk_level"],
+                "profile_missing": response_profile["profile_missing"],
+                "profile_inactive": response_profile["profile_inactive"],
             },
         )
 
     return [
         {
-            **disease_records[disease_key],
-            "count": disease_counts[disease_key],
+            **disease_records[record_key],
+            "count": disease_counts[record_key],
         }
-        for disease_key in sorted(disease_records, key=lambda key: disease_records[key]["name"])
+        for record_key in sorted(
+            disease_records,
+            key=lambda key: (
+                disease_records[key]["name"],
+                disease_records[key]["organ_type"],
+            ),
+        )
     ]
 
 
@@ -240,6 +343,7 @@ def _inspection_to_signal_candidate(inspection):
     return {
         "inspection": inspection,
         "profile": profile,
+        "profile_fields": _profile_response_fields(profile, inspection),
         "disease_key": disease_key,
         "disease_name": disease_name,
         "latitude": latitude,
@@ -255,7 +359,7 @@ def _inspection_to_signal_candidate(inspection):
 
 def _signal_candidate_to_response(signal):
     inspection = signal["inspection"]
-    profile = signal["profile"]
+    profile_fields = signal["profile_fields"]
     device = signal["device"]
     line = signal["line"]
     zone = signal["zone"]
@@ -271,15 +375,15 @@ def _signal_candidate_to_response(signal):
         "longitude": signal["longitude"],
         "disease_id": str(inspection.predicted_disease_id) if inspection.predicted_disease_id else None,
         "disease_key": signal["disease_key"],
+        "ai_label": signal["disease_key"],
         "disease_name": signal["disease_name"],
         "label": signal["disease_name"] or inspection.top1_label,
         "confidence": inspection.confidence_score,
         "severity": _resolve_severity(inspection.confidence_score),
-        "organ_type": inspection.organ_type,
+        "organ_type": _resolve_organ_type(inspection),
         "captured_at": inspection.captured_at.isoformat() if inspection.captured_at else None,
         "source_message_id": inspection.source_message_id,
-        "spread_type": profile.spread_type if profile else None,
-        "zone_policy": profile.zone_policy if profile else ZONE_POLICY_NO_ZONE,
+        **profile_fields,
         "site_id": str(site.id),
         "site_name": site.name,
         "greenhouse_id": str(greenhouse.id),
@@ -295,11 +399,13 @@ def _build_infection_zones(signals):
     groups = defaultdict(list)
     for signal in signals:
         profile = signal["profile"]
-        if profile is None or not profile.creates_zone:
+        if not _profile_creates_zone(profile):
             continue
 
         group_key = (
+            _resolve_organ_type(signal["inspection"]),
             signal["disease_key"],
+            signal["profile_fields"]["zone_type"],
             signal["site"].id,
             signal["greenhouse"].id,
             signal["zone"].id,
@@ -315,12 +421,7 @@ def _build_infection_zones(signals):
             default=0,
         )
         latest_captured_at = max(signal["inspection"].captured_at for signal in group_signals)
-        radius_meters = calculate_zone_radius_meters(
-            profile,
-            confidence_score=max_confidence,
-            signal_count=len(group_signals),
-            latest_signal_at=latest_captured_at,
-        )
+        radius_meters = round(float(profile.spread_radius_m), 2)
         if radius_meters <= 0:
             continue
 
@@ -328,6 +429,7 @@ def _build_infection_zones(signals):
         longitude = sum(signal["longitude"] for signal in group_signals) / len(group_signals)
         first_signal = group_signals[0]
         first_inspection = first_signal["inspection"]
+        profile_fields = first_signal["profile_fields"]
         zone_id = _build_stable_zone_id(group_key)
 
         zones.append(
@@ -339,11 +441,11 @@ def _build_infection_zones(signals):
                     else None
                 ),
                 "disease_key": first_signal["disease_key"],
+                "ai_label": first_signal["disease_key"],
                 "disease_name": first_signal["disease_name"],
                 "severity": _resolve_severity(max_confidence),
-                "spread_type": profile.spread_type,
-                "zone_policy": profile.zone_policy,
-                "evidence_level": profile.evidence_level,
+                "organ_type": _resolve_organ_type(first_inspection),
+                **profile_fields,
                 "center": {
                     "latitude": round(latitude, 6),
                     "longitude": round(longitude, 6),

@@ -36,12 +36,28 @@ export function resolveInspectionDeviceLabel(deviceId, deviceMap) {
   return `${device.name} (${device.identifier})`;
 }
 
+export function resolveInspectionDeviceRecord(deviceId, deviceMap) {
+  if (!deviceId) {
+    return null;
+  }
+
+  return deviceMap.get(deviceId) || null;
+}
+
 export function resolveInspectionDiseaseLabel(diseaseId, diseaseMap, fallback = 'Unknown prediction') {
   if (!diseaseId) {
     return fallback;
   }
 
   return diseaseMap.get(diseaseId)?.name || fallback;
+}
+
+export function resolveInspectionDiseaseRecord(diseaseId, diseaseMap) {
+  if (!diseaseId) {
+    return null;
+  }
+
+  return diseaseMap.get(diseaseId) || null;
 }
 
 export function buildMetadataRows(metadata) {

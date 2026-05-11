@@ -10,23 +10,13 @@ from django.utils.text import slugify
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.catalog.models import Disease
+from apps.catalog.models import Disease, DiseaseMapProfile
 from apps.core.management.commands.seed_demo_data import Command as SeedDemoDataCommand
 from apps.devices.models import Device, Greenhouse, Line, Site, Zone
 from apps.inference.models import InferenceIndex, ModelVersion
-from apps.inspections.disease_zone_profiles import (
-    DISEASE_ZONE_PROFILES,
-    ZONE_POLICY_CONSERVATIVE_WATCH_ZONE,
-    ZONE_POLICY_EXPANDED_RISK_ZONE,
-    ZONE_POLICY_LOCAL_RISK_ZONE,
-    ZONE_POLICY_NO_ZONE,
-    ZONE_POLICY_VECTOR_SURVEILLANCE_ZONE,
-    calculate_zone_radius_meters,
-    get_disease_zone_profile,
-    should_create_zone,
-)
 from apps.inspections.models import Inspection
 from apps.inspections.serializers import InspectionCreateSerializer
+from apps.inspections.services import create_inspection_with_matches
 
 
 class InspectionConfidenceScoreTestMixin:
@@ -234,123 +224,6 @@ class InspectionAdminConfidenceScoreTests(
         self.assertIsNone(inspection.confidence_score)
 
 
-class DiseaseZoneProfileTests(TestCase):
-    def test_profiles_cover_current_ai_disease_classes(self):
-        expected_profiles = {
-            "anthracnose",
-            "bacterial_spot",
-            "blossom_end_rot",
-            "catfaced",
-            "fruit_cracking",
-            "healthy",
-            "late_blight",
-            "mold",
-            "spotted_wilt_virus",
-            "target_spot",
-            "bushy_stunt",
-            "early_blight",
-            "leaf_curl",
-        }
-
-        self.assertEqual(set(DISEASE_ZONE_PROFILES), expected_profiles)
-
-    def test_no_zone_profiles_never_create_risk_zones(self):
-        no_zone_profiles = {
-            "healthy",
-            "blossom_end_rot",
-            "catfaced",
-            "fruit_cracking",
-        }
-
-        for profile_key in no_zone_profiles:
-            with self.subTest(profile_key=profile_key):
-                profile = DISEASE_ZONE_PROFILES[profile_key]
-
-                self.assertEqual(profile.zone_policy, ZONE_POLICY_NO_ZONE)
-                self.assertFalse(should_create_zone(profile, has_valid_coordinates=True))
-                self.assertEqual(
-                    calculate_zone_radius_meters(
-                        profile,
-                        confidence_score=0.99,
-                        signal_count=5,
-                        latest_signal_at=timezone.now(),
-                    ),
-                    0,
-                )
-
-    def test_zone_creating_profiles_have_disease_specific_policies(self):
-        expected_policies = {
-            "anthracnose": ZONE_POLICY_LOCAL_RISK_ZONE,
-            "bacterial_spot": ZONE_POLICY_LOCAL_RISK_ZONE,
-            "early_blight": ZONE_POLICY_LOCAL_RISK_ZONE,
-            "target_spot": ZONE_POLICY_LOCAL_RISK_ZONE,
-            "mold": ZONE_POLICY_CONSERVATIVE_WATCH_ZONE,
-            "late_blight": ZONE_POLICY_EXPANDED_RISK_ZONE,
-            "spotted_wilt_virus": ZONE_POLICY_VECTOR_SURVEILLANCE_ZONE,
-            "leaf_curl": ZONE_POLICY_VECTOR_SURVEILLANCE_ZONE,
-            "bushy_stunt": ZONE_POLICY_CONSERVATIVE_WATCH_ZONE,
-        }
-
-        for profile_key, expected_policy in expected_policies.items():
-            with self.subTest(profile_key=profile_key):
-                profile = DISEASE_ZONE_PROFILES[profile_key]
-
-                self.assertEqual(profile.zone_policy, expected_policy)
-                self.assertTrue(should_create_zone(profile, has_valid_coordinates=True))
-                self.assertGreater(profile.base_radius_meters, 0)
-                self.assertGreater(profile.max_radius_meters, profile.base_radius_meters)
-
-    def test_alias_lookup_normalizes_labels_and_respects_organ_type(self):
-        self.assertEqual(get_disease_zone_profile("Late Blight", "leaf").key, "late_blight")
-        self.assertEqual(get_disease_zone_profile("late-blight", "fruit").key, "late_blight")
-        self.assertEqual(get_disease_zone_profile("Tomato Leaf Curl Virus", "leaf").key, "leaf_curl")
-        self.assertIsNone(get_disease_zone_profile("Anthracnose", "leaf"))
-        self.assertIsNone(get_disease_zone_profile("unknown disease", "leaf"))
-
-    def test_radius_formula_is_deterministic_and_uses_profile_radius(self):
-        now = timezone.now()
-        profile = DISEASE_ZONE_PROFILES["late_blight"]
-
-        radius = calculate_zone_radius_meters(
-            profile,
-            confidence_score=0.9,
-            signal_count=3,
-            latest_signal_at=now - timedelta(hours=12),
-            now=now,
-        )
-
-        self.assertEqual(radius, 112.12)
-
-    def test_radius_formula_uses_recency_reduction_for_old_signals(self):
-        now = timezone.now()
-        profile = DISEASE_ZONE_PROFILES["early_blight"]
-
-        radius = calculate_zone_radius_meters(
-            profile,
-            confidence_score=0.8,
-            signal_count=1,
-            latest_signal_at=now - timedelta(days=10),
-            now=now,
-        )
-
-        self.assertEqual(radius, 23.38)
-
-    def test_radius_is_zero_without_valid_coordinates(self):
-        profile = DISEASE_ZONE_PROFILES["bacterial_spot"]
-
-        self.assertFalse(should_create_zone(profile, has_valid_coordinates=False))
-        self.assertEqual(
-            calculate_zone_radius_meters(
-                profile,
-                confidence_score=0.95,
-                signal_count=5,
-                latest_signal_at=timezone.now(),
-                has_valid_coordinates=False,
-            ),
-            0,
-        )
-
-
 class InspectionMapSignalsApiTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
@@ -409,10 +282,75 @@ class InspectionMapSignalsApiTests(APITestCase):
             name="map-fruit-index",
             organ_type=InferenceIndex.OrganType.FRUIT,
         )
-        cls.early_blight = cls._create_disease("Early Blight")
-        cls.late_blight = cls._create_disease("Late Blight")
-        cls.healthy = cls._create_disease("Healthy")
-        cls.blossom_end_rot = cls._create_disease("Blossom End Rot")
+        cls.early_blight = cls._create_disease("Early Blight", "leaf", "early_blight", "leaf-early-blight")
+        cls.late_blight = cls._create_disease("Late Blight", "leaf", "late_blight", "leaf-late-blight")
+        cls.fruit_late_blight = cls._create_disease(
+            "Late Blight",
+            "fruit",
+            "late_blight",
+            "fruit-late-blight",
+        )
+        cls.healthy = cls._create_disease("Healthy", "leaf", "healthy", "leaf-healthy")
+        cls.fruit_healthy = cls._create_disease("Healthy", "fruit", "healthy", "fruit-healthy")
+        cls.leaf_curl = cls._create_disease("Leaf Curl", "leaf", "leaf_curl", "leaf-leaf-curl")
+        cls.blossom_end_rot = cls._create_disease(
+            "Blossom End Rot",
+            "fruit",
+            "blossom_end_rot",
+            "fruit-blossom-end-rot",
+        )
+        cls._create_profile(
+            cls.early_blight,
+            is_infectious=True,
+            spread_category=DiseaseMapProfile.SpreadCategory.FUNGAL,
+            transmission_mode=DiseaseMapProfile.TransmissionMode.SPLASH,
+            zone_type=DiseaseMapProfile.ZoneType.INFECTION_ZONE,
+            spread_radius_m=4,
+            risk_level=DiseaseMapProfile.RiskLevel.HIGH,
+            map_label="Early blight risk",
+        )
+        cls._create_profile(
+            cls.late_blight,
+            is_infectious=True,
+            spread_category=DiseaseMapProfile.SpreadCategory.OOMYCETE,
+            transmission_mode=DiseaseMapProfile.TransmissionMode.AIRBORNE,
+            zone_type=DiseaseMapProfile.ZoneType.INFECTION_ZONE,
+            spread_radius_m=8,
+            risk_level=DiseaseMapProfile.RiskLevel.CRITICAL,
+            map_label="Late blight high-risk zone",
+        )
+        cls._create_profile(
+            cls.fruit_late_blight,
+            is_infectious=True,
+            spread_category=DiseaseMapProfile.SpreadCategory.OOMYCETE,
+            transmission_mode=DiseaseMapProfile.TransmissionMode.AIRBORNE,
+            zone_type=DiseaseMapProfile.ZoneType.INFECTION_ZONE,
+            spread_radius_m=8,
+            risk_level=DiseaseMapProfile.RiskLevel.CRITICAL,
+            map_label="Late blight high-risk zone",
+        )
+        cls._create_profile(cls.healthy)
+        cls._create_profile(cls.fruit_healthy)
+        cls._create_profile(
+            cls.leaf_curl,
+            is_infectious=True,
+            spread_category=DiseaseMapProfile.SpreadCategory.VIRAL,
+            transmission_mode=DiseaseMapProfile.TransmissionMode.VECTOR_WHITEFLY,
+            zone_type=DiseaseMapProfile.ZoneType.VECTOR_RISK_ZONE,
+            spread_radius_m=5,
+            risk_level=DiseaseMapProfile.RiskLevel.HIGH,
+            map_label="Whitefly vector risk",
+        )
+        cls._create_profile(
+            cls.blossom_end_rot,
+            is_infectious=False,
+            spread_category=DiseaseMapProfile.SpreadCategory.PHYSIOLOGICAL,
+            transmission_mode=DiseaseMapProfile.TransmissionMode.NUTRIENT_WATER_IMBALANCE,
+            zone_type=DiseaseMapProfile.ZoneType.AGRONOMIC_RISK_ZONE,
+            spread_radius_m=2,
+            risk_level=DiseaseMapProfile.RiskLevel.MEDIUM,
+            map_label="Calcium/water stress risk",
+        )
 
         cls.early_signal = cls._create_inspection(
             device=cls.mapped_device,
@@ -464,8 +402,36 @@ class InspectionMapSignalsApiTests(APITestCase):
         )
 
     @classmethod
-    def _create_disease(cls, name):
-        return Disease.objects.create(name=name, slug=slugify(name))
+    def _create_disease(cls, name, organ_type, ai_label, slug):
+        disease, _ = Disease.objects.update_or_create(
+            organ_type=organ_type,
+            ai_label=ai_label,
+            defaults={
+                "name": name,
+                "slug": slug,
+            },
+        )
+        return disease
+
+    @classmethod
+    def _create_profile(cls, disease, **overrides):
+        defaults = {
+            "is_infectious": False,
+            "spread_category": DiseaseMapProfile.SpreadCategory.NONE,
+            "transmission_mode": DiseaseMapProfile.TransmissionMode.NONE,
+            "zone_type": DiseaseMapProfile.ZoneType.NONE,
+            "spread_radius_m": 0,
+            "risk_level": DiseaseMapProfile.RiskLevel.LOW,
+            "map_label": disease.name,
+            "short_map_description": "Test map profile.",
+            "is_active": True,
+        }
+        defaults.update(overrides)
+        profile, _ = DiseaseMapProfile.objects.update_or_create(
+            disease=disease,
+            defaults=defaults,
+        )
+        return profile
 
     @classmethod
     def _create_inspection(
@@ -511,6 +477,36 @@ class InspectionMapSignalsApiTests(APITestCase):
         self.assertEqual(response.data["summary"]["mapped_signals"], 4)
         self.assertEqual(response.data["summary"]["unmapped_signals"], 1)
 
+    def test_map_signals_response_contains_compatible_sections(self):
+        response = self.client.get(reverse("inspection-map-signals"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("available_diseases", response.data["filters"])
+        self.assertIn("signals", response.data)
+        self.assertIn("infection_zones", response.data)
+        self.assertIn("summary", response.data)
+        self.assertTrue(response.data["signals"])
+
+        signal = response.data["signals"][0]
+        for field_name in (
+            "organ_type",
+            "ai_label",
+            "zone_type",
+            "is_infectious",
+            "spread_category",
+            "transmission_mode",
+            "spread_radius_m",
+            "risk_level",
+            "map_color",
+            "map_label",
+            "short_map_description",
+            "profile_missing",
+            "profile_inactive",
+            "zone_policy",
+            "spread_type",
+        ):
+            self.assertIn(field_name, signal)
+
     def test_disease_filter_limits_signals_and_zones(self):
         response = self.client.get(
             reverse("inspection-map-signals"),
@@ -548,7 +544,7 @@ class InspectionMapSignalsApiTests(APITestCase):
         self.assertTrue(response.data["signals"])
         self.assertTrue(all(signal["confidence"] >= 0.9 for signal in response.data["signals"]))
 
-    def test_no_zone_disease_is_signal_but_not_infection_zone(self):
+    def test_physiological_disease_creates_agronomic_risk_zone_not_infection_zone(self):
         response = self.client.get(
             reverse("inspection-map-signals"),
             {"disease": str(self.blossom_end_rot.id)},
@@ -557,8 +553,20 @@ class InspectionMapSignalsApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["summary"]["total_signals"], 1)
         self.assertEqual(response.data["signals"][0]["disease_key"], "blossom_end_rot")
-        self.assertEqual(response.data["signals"][0]["zone_policy"], ZONE_POLICY_NO_ZONE)
-        self.assertEqual(response.data["infection_zones"], [])
+        self.assertFalse(response.data["signals"][0]["is_infectious"])
+        self.assertEqual(
+            response.data["signals"][0]["zone_type"],
+            DiseaseMapProfile.ZoneType.AGRONOMIC_RISK_ZONE,
+        )
+        self.assertEqual(len(response.data["infection_zones"]), 1)
+        self.assertEqual(
+            response.data["infection_zones"][0]["zone_type"],
+            DiseaseMapProfile.ZoneType.AGRONOMIC_RISK_ZONE,
+        )
+        self.assertNotEqual(
+            response.data["infection_zones"][0]["zone_type"],
+            DiseaseMapProfile.ZoneType.INFECTION_ZONE,
+        )
 
     def test_infection_zone_generation_uses_disease_profile_and_centroid(self):
         response = self.client.get(
@@ -571,11 +579,155 @@ class InspectionMapSignalsApiTests(APITestCase):
 
         self.assertTrue(zone["id"].startswith("zone-"))
         self.assertEqual(zone["disease_key"], "early_blight")
-        self.assertEqual(zone["zone_policy"], ZONE_POLICY_LOCAL_RISK_ZONE)
+        self.assertEqual(zone["zone_policy"], DiseaseMapProfile.ZoneType.INFECTION_ZONE)
+        self.assertEqual(zone["zone_type"], DiseaseMapProfile.ZoneType.INFECTION_ZONE)
+        self.assertEqual(zone["spread_radius_m"], 4)
         self.assertEqual(zone["severity"], "high")
         self.assertEqual(zone["center"]["latitude"], 34.13)
         self.assertEqual(zone["center"]["longitude"], -6.826)
-        self.assertEqual(zone["radius_meters"], 41.33)
+        self.assertEqual(zone["radius_meters"], 4)
+
+    def test_vector_disease_creates_vector_risk_zone(self):
+        self._create_inspection(
+            device=self.mapped_device,
+            disease=self.leaf_curl,
+            label="Leaf Curl",
+            confidence_score=0.93,
+            captured_offset=timedelta(minutes=30),
+            source_message_id="leaf-curl-vector-zone",
+        )
+
+        response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"disease": str(self.leaf_curl.id)},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["summary"]["total_signals"], 1)
+        zone = response.data["infection_zones"][0]
+        self.assertEqual(zone["disease_key"], "leaf_curl")
+        self.assertEqual(zone["zone_type"], DiseaseMapProfile.ZoneType.VECTOR_RISK_ZONE)
+        self.assertEqual(zone["transmission_mode"], DiseaseMapProfile.TransmissionMode.VECTOR_WHITEFLY)
+        self.assertEqual(zone["radius_meters"], 5)
+
+    def test_healthy_fruit_and_leaf_create_no_signal_or_zone(self):
+        self._create_inspection(
+            device=self.mapped_device_two,
+            disease=self.fruit_healthy,
+            label="Healthy",
+            confidence_score=0.97,
+            captured_offset=timedelta(minutes=45),
+            source_message_id="fruit-healthy-map-signal",
+            organ_type=Inspection.OrganType.FRUIT,
+        )
+
+        response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"disease_name": "healthy"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["summary"]["total_signals"], 0)
+        self.assertEqual(response.data["signals"], [])
+        self.assertEqual(response.data["infection_zones"], [])
+
+    def test_missing_map_profile_does_not_crash_and_creates_no_zone(self):
+        profileless_disease = self._create_disease(
+            "Profileless Disease",
+            "leaf",
+            "profileless_disease",
+            "leaf-profileless-disease",
+        )
+        self._create_inspection(
+            device=self.mapped_device,
+            disease=profileless_disease,
+            label="Profileless Disease",
+            confidence_score=0.87,
+            captured_offset=timedelta(minutes=20),
+            source_message_id="profileless-map-signal",
+        )
+
+        response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"disease": str(profileless_disease.id)},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["summary"]["total_signals"], 1)
+        self.assertEqual(response.data["signals"][0]["profile_missing"], True)
+        self.assertEqual(response.data["signals"][0]["zone_type"], DiseaseMapProfile.ZoneType.NONE)
+        self.assertEqual(response.data["infection_zones"], [])
+
+    def test_inactive_map_profile_creates_signal_but_no_zone(self):
+        inactive_disease = self._create_disease(
+            "Inactive Profile Disease",
+            "leaf",
+            "inactive_profile_disease",
+            "leaf-inactive-profile-disease",
+        )
+        self._create_profile(
+            inactive_disease,
+            is_infectious=True,
+            spread_category=DiseaseMapProfile.SpreadCategory.FUNGAL,
+            transmission_mode=DiseaseMapProfile.TransmissionMode.SPLASH,
+            zone_type=DiseaseMapProfile.ZoneType.INFECTION_ZONE,
+            spread_radius_m=9,
+            risk_level=DiseaseMapProfile.RiskLevel.HIGH,
+            is_active=False,
+        )
+        self._create_inspection(
+            device=self.mapped_device,
+            disease=inactive_disease,
+            label="Inactive Profile Disease",
+            confidence_score=0.9,
+            captured_offset=timedelta(minutes=10),
+            source_message_id="inactive-profile-map-signal",
+        )
+
+        response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"disease": str(inactive_disease.id)},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["summary"]["total_signals"], 1)
+        self.assertEqual(response.data["signals"][0]["profile_inactive"], True)
+        self.assertEqual(response.data["signals"][0]["spread_radius_m"], 9)
+        self.assertEqual(response.data["infection_zones"], [])
+
+    def test_late_blight_fruit_and_leaf_use_organ_specific_disease_records(self):
+        fruit_signal = self._create_inspection(
+            device=self.mapped_device,
+            disease=self.fruit_late_blight,
+            label="Late Blight",
+            confidence_score=0.94,
+            captured_offset=timedelta(minutes=15),
+            source_message_id="fruit-late-blight-map-signal",
+            organ_type=Inspection.OrganType.FRUIT,
+        )
+
+        combined_response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"disease_name": "late_blight"},
+        )
+        fruit_response = self.client.get(
+            reverse("inspection-map-signals"),
+            {
+                "disease_name": "late_blight",
+                "organ_type": Inspection.OrganType.FRUIT,
+            },
+        )
+
+        self.assertEqual(combined_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            {signal["organ_type"] for signal in combined_response.data["signals"]},
+            {Inspection.OrganType.FRUIT, Inspection.OrganType.LEAF},
+        )
+        self.assertEqual(fruit_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(fruit_response.data["summary"]["total_signals"], 1)
+        self.assertEqual(fruit_response.data["signals"][0]["inspection_id"], str(fruit_signal.id))
+        self.assertEqual(fruit_response.data["signals"][0]["disease_id"], str(self.fruit_late_blight.id))
+        self.assertEqual(fruit_response.data["infection_zones"][0]["risk_level"], DiseaseMapProfile.RiskLevel.CRITICAL)
 
     def test_hierarchy_filter_limits_signals_by_line(self):
         response = self.client.get(
@@ -586,6 +738,46 @@ class InspectionMapSignalsApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["summary"]["total_signals"], 1)
         self.assertEqual(response.data["signals"][0]["line_id"], str(self.other_line.id))
+
+    def test_status_filter_limits_signals(self):
+        self.early_signal.status = Inspection.Status.REVIEWED
+        self.early_signal.save(update_fields=["status"])
+
+        response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"status": Inspection.Status.REVIEWED},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["summary"]["total_signals"], 1)
+        self.assertEqual(response.data["signals"][0]["inspection_id"], str(self.early_signal.id))
+
+    def test_processing_status_filter_preserves_completed_only_archive_behavior(self):
+        failed_signal = self._create_inspection(
+            device=self.mapped_device,
+            disease=self.early_blight,
+            label="Early Blight",
+            confidence_score=0.83,
+            captured_offset=timedelta(minutes=12),
+            source_message_id="failed-processing-map-signal",
+        )
+        failed_signal.processing_status = Inspection.ProcessingStatus.FAILED
+        failed_signal.save(update_fields=["processing_status"])
+
+        completed_response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"processing_status": Inspection.ProcessingStatus.COMPLETED},
+        )
+        failed_response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"processing_status": Inspection.ProcessingStatus.FAILED},
+        )
+
+        self.assertEqual(completed_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(failed_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(completed_response.data["summary"]["total_signals"] > 0)
+        self.assertEqual(failed_response.data["summary"]["total_signals"], 0)
+        self.assertEqual(failed_response.data["signals"], [])
 
     def test_review_corrected_predicted_disease_is_respected_over_top1_label(self):
         response = self.client.get(
@@ -600,4 +792,130 @@ class InspectionMapSignalsApiTests(APITestCase):
         self.assertEqual(signal["disease_key"], "late_blight")
         self.assertEqual(signal["disease_name"], "Late Blight")
         self.assertEqual(signal["label"], "Late Blight")
+
+
+class InspectionDiseaseResolutionTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.now = timezone.now().replace(microsecond=0)
+        cls.site = Site.objects.create(name="Resolution Site", location="North")
+        cls.greenhouse = Greenhouse.objects.create(site=cls.site, name="Resolution GH")
+        cls.zone = Zone.objects.create(greenhouse=cls.greenhouse, name="Resolution Zone")
+        cls.line = Line.objects.create(zone=cls.zone, name="Resolution Line", code="resolution-line")
+        cls.device = Device.objects.create(
+            line=cls.line,
+            name="Resolution Camera",
+            identifier="resolution-camera",
+        )
+        cls.model_version = ModelVersion.objects.create(name="Resolution Model", version="v1")
+        cls.fruit_index = InferenceIndex.objects.create(
+            model_version=cls.model_version,
+            name="resolution-fruit-index",
+            organ_type=InferenceIndex.OrganType.FRUIT,
+        )
+        cls.leaf_index = InferenceIndex.objects.create(
+            model_version=cls.model_version,
+            name="resolution-leaf-index",
+            organ_type=InferenceIndex.OrganType.LEAF,
+        )
+        cls.fruit_late_blight = Disease.objects.get(
+            organ_type=Disease.OrganType.FRUIT,
+            ai_label="late_blight",
+        )
+        cls.leaf_late_blight = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="late_blight",
+        )
+        cls.fruit_healthy = Disease.objects.get(
+            organ_type=Disease.OrganType.FRUIT,
+            ai_label="healthy",
+        )
+        cls.leaf_healthy = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="healthy",
+        )
+        cls.leaf_curl = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="leaf_curl",
+        )
+
+    def _create_inspection_from_label(self, *, organ_type, top1_label, inference_index):
+        return create_inspection_with_matches(
+            inspection_data={
+                "device": self.device,
+                "inference_index": inference_index,
+                "organ_type": organ_type,
+                "status": Inspection.Status.NEW,
+                "processing_status": Inspection.ProcessingStatus.COMPLETED,
+                "source_message_id": f"resolution-{organ_type}-{top1_label}",
+                "top1_label": top1_label,
+                "confidence_score": 0.91,
+                "captured_at": self.now,
+                "received_at": self.now,
+                "processed_at": self.now + timedelta(minutes=1),
+                "extra_metadata": {"source": "resolution-test"},
+            },
+            matches_data=[
+                {
+                    "rank_order": 1,
+                    "matched_label": top1_label,
+                    "similarity_score": 0.91,
+                    "metadata_json": {},
+                }
+            ],
+        )
+
+    def test_late_blight_top1_label_resolves_by_organ_type(self):
+        fruit_inspection = self._create_inspection_from_label(
+            organ_type=Inspection.OrganType.FRUIT,
+            top1_label="late_blight",
+            inference_index=self.fruit_index,
+        )
+        leaf_inspection = self._create_inspection_from_label(
+            organ_type=Inspection.OrganType.LEAF,
+            top1_label="Late Blight",
+            inference_index=self.leaf_index,
+        )
+
+        self.assertEqual(fruit_inspection.predicted_disease, self.fruit_late_blight)
+        self.assertEqual(leaf_inspection.predicted_disease, self.leaf_late_blight)
+        self.assertEqual(fruit_inspection.matches.get(rank_order=1).disease, self.fruit_late_blight)
+        self.assertEqual(leaf_inspection.matches.get(rank_order=1).disease, self.leaf_late_blight)
+
+    def test_healthy_top1_label_resolves_by_organ_type(self):
+        fruit_inspection = self._create_inspection_from_label(
+            organ_type=Inspection.OrganType.FRUIT,
+            top1_label="healthy",
+            inference_index=self.fruit_index,
+        )
+        leaf_inspection = self._create_inspection_from_label(
+            organ_type=Inspection.OrganType.LEAF,
+            top1_label="Healthy",
+            inference_index=self.leaf_index,
+        )
+
+        self.assertEqual(fruit_inspection.predicted_disease, self.fruit_healthy)
+        self.assertEqual(leaf_inspection.predicted_disease, self.leaf_healthy)
+
+    def test_explicit_predicted_disease_id_behavior_is_preserved(self):
+        inspection = create_inspection_with_matches(
+            inspection_data={
+                "device": self.device,
+                "inference_index": self.leaf_index,
+                "predicted_disease": self.leaf_curl,
+                "organ_type": Inspection.OrganType.LEAF,
+                "status": Inspection.Status.NEW,
+                "processing_status": Inspection.ProcessingStatus.COMPLETED,
+                "source_message_id": "explicit-disease-resolution",
+                "top1_label": "late_blight",
+                "confidence_score": 0.88,
+                "captured_at": self.now,
+                "received_at": self.now,
+                "processed_at": self.now + timedelta(minutes=1),
+                "extra_metadata": {"source": "explicit-test"},
+            },
+            matches_data=[],
+        )
+
+        self.assertEqual(inspection.predicted_disease, self.leaf_curl)
 

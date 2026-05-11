@@ -65,7 +65,12 @@ def _is_healthy_subject(disease, display_label):
     if disease is not None:
         disease_name = (disease.name or "").strip().lower()
         disease_slug = (disease.slug or "").strip().lower()
-        if disease_name == HEALTHY_LABEL or disease_slug == HEALTHY_LABEL:
+        disease_ai_label = (getattr(disease, "ai_label", "") or "").strip().lower()
+        if (
+            disease_ai_label == HEALTHY_LABEL
+            or disease_name == HEALTHY_LABEL
+            or disease_slug == HEALTHY_LABEL
+        ):
             return True
 
     if display_label:

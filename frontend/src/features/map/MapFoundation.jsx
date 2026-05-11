@@ -31,31 +31,25 @@ const EMPTY_DISEASE_SIGNALS = [];
 const EMPTY_INFECTION_ZONES = [];
 const EMPTY_DISEASE_MAP_FILTERS = {};
 const EMPTY_DISEASE_OPTIONS = [];
-const ZONE_STYLES = {
-  high: {
-    color: '#dc2626',
-    fillColor: '#ef4444',
-    fillOpacity: 0.12,
-    opacity: 0.9,
-    weight: 2,
-  },
-  medium: {
-    color: '#f59e0b',
-    fillColor: '#f59e0b',
-    fillOpacity: 0.1,
-    opacity: 0.85,
-    weight: 2,
-  },
+const ZONE_TYPE_LABELS = {
+  infection_zone: 'Infection zone',
+  vector_risk_zone: 'Vector risk zone',
+  agronomic_risk_zone: 'Agronomic risk zone',
+  risk_zone: 'Risk zone',
+  none: 'No zone',
 };
-const SIGNAL_STYLES = {
-  high: {
-    color: '#7f1d1d',
-    fillColor: '#ef4444',
-  },
-  medium: {
-    color: '#92400e',
-    fillColor: '#f59e0b',
-  },
+const FALLBACK_ZONE_COLORS = {
+  infection_zone: '#dc2626',
+  vector_risk_zone: '#7c3aed',
+  agronomic_risk_zone: '#d97706',
+  risk_zone: '#f59e0b',
+  none: '#64748b',
+};
+const RISK_COLOR_FALLBACKS = {
+  critical: '#b91c1c',
+  high: '#dc2626',
+  medium: '#f59e0b',
+  low: '#16a34a',
 };
 const CONFIDENCE_FILTER_OPTIONS = [
   { value: '', label: 'All' },
@@ -223,6 +217,52 @@ function formatMapLabel(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function formatZoneType(value) {
+  return ZONE_TYPE_LABELS[value] || formatMapLabel(value);
+}
+
+function formatBooleanFlag(value, trueLabel, falseLabel) {
+  if (value === true) {
+    return trueLabel;
+  }
+
+  if (value === false) {
+    return falseLabel;
+  }
+
+  return 'N/A';
+}
+
+function formatRadiusMeters(value) {
+  const radius = Number(value);
+  if (!Number.isFinite(radius)) {
+    return 'N/A';
+  }
+
+  return `${radius} m`;
+}
+
+function isValidCssColor(value) {
+  if (!value || typeof value !== 'string' || typeof CSS === 'undefined' || !CSS.supports) {
+    return false;
+  }
+
+  return CSS.supports('color', value);
+}
+
+function resolveSemanticColor(record) {
+  if (isValidCssColor(record?.map_color)) {
+    return record.map_color;
+  }
+
+  return (
+    FALLBACK_ZONE_COLORS[record?.zone_type]
+    || RISK_COLOR_FALLBACKS[record?.risk_level]
+    || RISK_COLOR_FALLBACKS[record?.severity]
+    || FALLBACK_ZONE_COLORS.risk_zone
+  );
+}
+
 function appendPopupRow(container, label, value) {
   const row = document.createElement('div');
   row.textContent = `${label}: ${value || 'N/A'}`;
@@ -245,9 +285,16 @@ function createDiseaseSignalPopupContent(signal) {
     ['Source message', signal.source_message_id],
     ['Device', signal.device_name],
     ['Identifier', signal.identifier],
-    ['Severity', formatMapLabel(signal.severity)],
+    ['Disease', signal.disease_name || signal.label],
     ['Confidence', formatConfidence(signal.confidence)],
     ['Organ', formatMapLabel(signal.organ_type)],
+    ['AI label', signal.ai_label],
+    ['Infectious', formatBooleanFlag(signal.is_infectious, 'Infectious', 'Non-infectious')],
+    ['Zone type', formatZoneType(signal.zone_type)],
+    ['Risk level', formatMapLabel(signal.risk_level || signal.severity)],
+    ['Transmission', formatMapLabel(signal.transmission_mode)],
+    ['Spread radius', formatRadiusMeters(signal.spread_radius_m)],
+    ['Profile', signal.profile_missing ? 'Missing' : signal.profile_inactive ? 'Inactive' : 'Active'],
     ['Captured', formatDateTime(signal.captured_at)],
     ['Site', signal.site_name],
     ['Greenhouse', signal.greenhouse_name],
@@ -255,6 +302,13 @@ function createDiseaseSignalPopupContent(signal) {
     ['Line', signal.line_name],
   ].forEach(([label, value]) => appendPopupRow(details, label, value));
   wrapper.appendChild(details);
+
+  if (signal.short_map_description) {
+    const description = document.createElement('p');
+    description.className = 'max-w-xs text-xs leading-5 text-slate-600';
+    description.textContent = signal.short_map_description;
+    wrapper.appendChild(description);
+  }
 
   return wrapper;
 }
@@ -265,20 +319,24 @@ function createInfectionZonePopupContent(zone) {
 
   const title = document.createElement('div');
   title.className = 'font-semibold text-slate-950';
-  title.textContent = `Estimated risk zone: ${zone.disease_name || 'Disease'}`;
+  title.textContent = `${formatZoneType(zone.zone_type)}: ${zone.disease_name || 'Disease'}`;
   wrapper.appendChild(title);
 
   const details = document.createElement('div');
   details.className = 'space-y-1 text-xs text-slate-700';
   [
-    ['Severity', formatMapLabel(zone.severity)],
-    ['Spread type', formatMapLabel(zone.spread_type)],
-    ['Zone policy', formatMapLabel(zone.zone_policy)],
-    ['Evidence', formatMapLabel(zone.evidence_level)],
+    ['Organ', formatMapLabel(zone.organ_type)],
+    ['AI label', zone.ai_label],
+    ['Infectious', formatBooleanFlag(zone.is_infectious, 'Infectious', 'Non-infectious')],
+    ['Zone type', formatZoneType(zone.zone_type)],
+    ['Risk level', formatMapLabel(zone.risk_level || zone.severity)],
+    ['Spread category', formatMapLabel(zone.spread_category)],
+    ['Transmission', formatMapLabel(zone.transmission_mode)],
+    ['Profile', zone.profile_missing ? 'Missing' : zone.profile_inactive ? 'Inactive' : 'Active'],
     ['Signal count', zone.signal_count],
     ['Max confidence', formatConfidence(zone.max_confidence)],
     ['Latest captured', formatDateTime(zone.latest_captured_at)],
-    ['Radius', zone.radius_meters ? `${zone.radius_meters} m` : 'N/A'],
+    ['Configured radius', formatRadiusMeters(zone.spread_radius_m || zone.radius_meters)],
     ['Site', zone.site_name],
     ['Greenhouse', zone.greenhouse_name],
     ['Zone', zone.zone_name],
@@ -286,23 +344,39 @@ function createInfectionZonePopupContent(zone) {
   ].forEach(([label, value]) => appendPopupRow(details, label, value));
   wrapper.appendChild(details);
 
+  if (zone.short_map_description) {
+    const description = document.createElement('p');
+    description.className = 'max-w-xs text-xs leading-5 text-slate-600';
+    description.textContent = zone.short_map_description;
+    wrapper.appendChild(description);
+  }
+
   const reason = document.createElement('p');
   reason.className = 'max-w-xs text-xs leading-5 text-slate-600';
-  reason.textContent = zone.radius_reason || 'Approximate infection zone for operational visualization.';
+  reason.textContent = zone.radius_reason || 'Approximate risk zone for operational visualization.';
   wrapper.appendChild(reason);
 
   return wrapper;
 }
 
-function getSeverityZoneStyle(severity) {
-  return ZONE_STYLES[severity] ?? ZONE_STYLES.medium;
-}
-
-function getSeveritySignalStyle(severity, diseaseFiltersActive) {
-  const baseStyle = SIGNAL_STYLES[severity] ?? SIGNAL_STYLES.medium;
+function getSemanticZoneStyle(zone) {
+  const color = resolveSemanticColor(zone);
 
   return {
-    ...baseStyle,
+    color,
+    fillColor: color,
+    fillOpacity: zone?.zone_type === 'agronomic_risk_zone' ? 0.09 : 0.12,
+    opacity: 0.9,
+    weight: zone?.risk_level === 'critical' ? 3 : 2,
+  };
+}
+
+function getSemanticSignalStyle(signal, diseaseFiltersActive) {
+  const color = resolveSemanticColor(signal);
+
+  return {
+    color,
+    fillColor: color,
     radius: diseaseFiltersActive ? 8 : 6,
     fillOpacity: 0.92,
     opacity: 1,
@@ -431,7 +505,7 @@ function DiseaseMapLayerStatus({ query, summary }) {
   if (summary.infection_zone_count === 0) {
     return (
       <Alert>
-        <AlertTitle>No infection zones</AlertTitle>
+        <AlertTitle>No map zones</AlertTitle>
         <AlertDescription>
           Mapped disease signals are available, but none currently qualify for an estimated risk zone.
         </AlertDescription>
@@ -454,12 +528,16 @@ function DiseaseMapLegend() {
         Disease signal marker
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="h-3 w-5 rounded-full border-2 border-amber-500 bg-amber-500/20" />
-        Medium estimated risk zone
+        <span className="h-3 w-5 rounded-full border-2 border-red-600 bg-red-500/20" />
+        Infection zone
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="h-3 w-5 rounded-full border-2 border-red-600 bg-red-500/20" />
-        High estimated risk zone
+        <span className="h-3 w-5 rounded-full border-2 border-violet-600 bg-violet-500/20" />
+        Vector risk zone
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="h-3 w-5 rounded-full border-2 border-amber-600 bg-amber-500/20" />
+        Agronomic risk zone
       </span>
     </div>
   );
@@ -649,7 +727,7 @@ export default function MapFoundation({
         }
 
         L.circle(position, {
-          ...getSeverityZoneStyle(zone.severity),
+          ...getSemanticZoneStyle(zone),
           radius,
         })
           .bindPopup(createInfectionZonePopupContent(zone))
@@ -666,7 +744,7 @@ export default function MapFoundation({
           return;
         }
 
-        L.circleMarker(position, getSeveritySignalStyle(signal.severity, diseaseFiltersActive))
+        L.circleMarker(position, getSemanticSignalStyle(signal, diseaseFiltersActive))
           .bindPopup(createDiseaseSignalPopupContent(signal))
           .addTo(diseaseSignalLayer);
         diseaseBounds.extend(position);

@@ -34,7 +34,8 @@ class SeedDemoDataCommandTests(APITestCase):
             InferenceIndex.objects.filter(name="leaf-demo-index", organ_type="leaf").count(),
             1,
         )
-        self.assertGreaterEqual(Disease.objects.count(), 3)
+        self.assertEqual(Disease.objects.filter(organ_type=Disease.OrganType.FRUIT).count(), 10)
+        self.assertEqual(Disease.objects.filter(organ_type=Disease.OrganType.LEAF).count(), 5)
 
 
 class InspectionReviewFlowTests(APITestCase):
@@ -47,8 +48,14 @@ class InspectionReviewFlowTests(APITestCase):
             name="leaf-demo-index",
             organ_type=InferenceIndex.OrganType.LEAF,
         )
-        self.healthy_disease = Disease.objects.get(name="Healthy")
-        self.corrected_disease = Disease.objects.get(name="Early Blight")
+        self.healthy_disease = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="healthy",
+        )
+        self.corrected_disease = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="early_blight",
+        )
 
     def create_inspection(self, *, predicted_disease=None, top1_label="Healthy"):
         timestamp = timezone.now().replace(microsecond=0)

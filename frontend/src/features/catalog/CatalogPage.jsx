@@ -1,86 +1,92 @@
-import { useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
-  Box,
   Button,
-  Grid,
   Snackbar,
   Stack,
-  Typography,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import PageHeader from '@/components/ui/PageHeader';
 import PanelCard from '@/components/ui/PanelCard';
+import CatalogDiseaseDetailDrawer from '@/features/catalog/CatalogDiseaseDetailDrawer';
+import CatalogDiseaseSpreadMap from '@/features/catalog/CatalogDiseaseSpreadMap';
 import CreateDiseaseDialog from '@/features/catalog/CreateDiseaseDialog';
-import DiseaseDetailPanel from '@/features/catalog/DiseaseDetailPanel';
-import { createDisease, fetchDiseasesPage } from '@/features/catalog/api';
+import CatalogDiseasesTable from '@/features/catalog/components/CatalogDiseasesTable';
+import {
+  CATALOG_DISEASES_QUERY_KEY,
+  CATALOG_PROFILE_BOARD_QUERY_KEY,
+  createDisease,
+  fetchCatalogDiseaseProfileBoard,
+  fetchDiseasesPage,
+} from '@/features/catalog/api';
 import useAuthStore from '@/store/authStore';
 
-const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
-
 export default function CatalogPage() {
-  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 20 });
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
+  const [sorting, setSorting] = useState([]);
   const [selectedDisease, setSelectedDisease] = useState(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createDialogSession, setCreateDialogSession] = useState(0);
   const [successMessage, setSuccessMessage] = useState('');
+  const [organTypeFilter, setOrganTypeFilter] = useState('');
+  const queryClient = useQueryClient();
   const roleName = useAuthStore((state) => state.user?.role?.name || '');
   const isAdmin = roleName.trim().toLowerCase() === 'admin';
 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
-    queryKey: ['catalog-diseases', paginationModel.page, paginationModel.pageSize],
-    queryFn: () => fetchDiseasesPage(paginationModel),
+    queryKey: [
+      ...CATALOG_DISEASES_QUERY_KEY,
+      pagination.pageIndex,
+      pagination.pageSize,
+      organTypeFilter,
+      sorting,
+    ],
+    queryFn: () => fetchDiseasesPage({
+      page: pagination.pageIndex,
+      pageSize: pagination.pageSize,
+      organType: organTypeFilter,
+      sorting,
+    }),
     placeholderData: (previousData) => previousData,
+  });
+
+  const {
+    data: spreadMapDiseases = [],
+    isLoading: isSpreadMapLoading,
+    isError: isSpreadMapError,
+  } = useQuery({
+    queryKey: CATALOG_PROFILE_BOARD_QUERY_KEY,
+    queryFn: fetchCatalogDiseaseProfileBoard,
   });
 
   const rows = data?.results ?? [];
   const rowCount = data?.count ?? 0;
-  const rowSelectionModel = selectedDisease
-    ? { type: 'include', ids: new Set([selectedDisease.id]) }
-    : { type: 'include', ids: new Set() };
-
-  const columns = useMemo(
-    () => [
-      { field: 'name', headerName: 'Name', flex: 1.1, minWidth: 180 },
-      { field: 'slug', headerName: 'Slug', flex: 1, minWidth: 160 },
-      {
-        field: 'summary',
-        headerName: 'Summary',
-        flex: 1.8,
-        minWidth: 260,
-        renderCell: (params) => (
-          <Typography variant="body2" color="text.secondary" noWrap sx={{ width: '100%' }}>
-            {params.value || 'N/A'}
-          </Typography>
-        ),
-      },
-      {
-        field: 'created_at',
-        headerName: 'Created',
-        minWidth: 190,
-        flex: 0.9,
-      },
-      {
-        field: 'updated_at',
-        headerName: 'Updated',
-        minWidth: 190,
-        flex: 0.9,
-      },
-    ],
-    [],
+  const filteredSpreadMapDiseases = useMemo(
+    () => (organTypeFilter
+      ? spreadMapDiseases.filter((disease) => disease.organ_type === organTypeFilter)
+      : spreadMapDiseases),
+    [organTypeFilter, spreadMapDiseases],
   );
 
-  const handlePaginationModelChange = (nextModel) => {
-    setPaginationModel(nextModel);
+  const handleSelectDisease = useCallback((disease) => {
+    setSelectedDisease(disease ?? null);
+  }, []);
+  const handleCloseDiseaseDetails = useCallback(() => {
     setSelectedDisease(null);
-  };
-
-  const handleRowSelectionModelChange = (rowSelectionModel) => {
-    const selectedId = rowSelectionModel.ids.values().next().value;
-    const disease = rows.find((row) => row.id === selectedId) ?? null;
-    setSelectedDisease(disease);
-  };
+  }, []);
+  const handlePaginationChange = useCallback((updater) => {
+    setPagination((currentValue) => (typeof updater === 'function' ? updater(currentValue) : updater));
+  }, []);
+  const handleSortingChange = useCallback((updater) => {
+    setSorting((currentValue) => (typeof updater === 'function' ? updater(currentValue) : updater));
+    setPagination((currentValue) => ({ ...currentValue, pageIndex: 0 }));
+    setSelectedDisease(null);
+  }, []);
+  const handleOrganTypeFilterChange = useCallback((nextOrganType) => {
+    setOrganTypeFilter(nextOrganType);
+    setPagination((currentValue) => ({ ...currentValue, pageIndex: 0 }));
+    setSelectedDisease(null);
+  }, []);
 
   const createDiseaseMutation = useMutation({
     mutationFn: createDisease,
@@ -91,7 +97,10 @@ export default function CatalogPage() {
     setSelectedDisease(createdDisease);
     setIsCreateDialogOpen(false);
     setSuccessMessage(`Disease "${createdDisease.name}" created successfully.`);
-    await refetch();
+    await Promise.all([
+      refetch(),
+      queryClient.invalidateQueries({ queryKey: CATALOG_PROFILE_BOARD_QUERY_KEY }),
+    ]);
     return createdDisease;
   };
 
@@ -128,63 +137,42 @@ export default function CatalogPage() {
           </Alert>
         ) : null}
 
-        <Grid container spacing={1.75}>
-          <Grid size={{ xs: 12, lg: 7 }}>
-            <PanelCard
-              title="Disease registry"
-              subtitle="Paginated backend records with server-side paging."
-            >
-              <Box sx={{ height: 420 }}>
-                <DataGrid
-                  rows={rows}
-                  columns={columns}
-                  getRowId={(row) => row.id}
-                  loading={isLoading || isFetching}
-                  pagination
-                  paginationMode="server"
-                  paginationModel={paginationModel}
-                  onPaginationModelChange={handlePaginationModelChange}
-                  rowCount={rowCount}
-                  pageSizeOptions={PAGE_SIZE_OPTIONS}
-                  disableColumnMenu
-                  disableRowSelectionOnClick={false}
-                  onRowSelectionModelChange={handleRowSelectionModelChange}
-                  rowSelectionModel={rowSelectionModel}
-                  slots={{
-                    noRowsOverlay: () => (
-                      <Stack sx={{ height: '100%' }} alignItems="center" justifyContent="center" spacing={1.5}>
-                        <Typography variant="subtitle1">No diseases found</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          The backend returned an empty paginated catalog.
-                        </Typography>
-                      </Stack>
-                    ),
-                  }}
-                  sx={{
-                    border: 0,
-                    '& .MuiDataGrid-columnHeader': {
-                      minHeight: '38px !important',
-                      maxHeight: '38px !important',
-                    },
-                    '& .MuiDataGrid-cell': {
-                      py: 0.35,
-                    },
-                    '& .MuiDataGrid-row': {
-                      cursor: 'pointer',
-                      minHeight: '40px !important',
-                      maxHeight: '40px !important',
-                    },
-                  }}
-                />
-              </Box>
-            </PanelCard>
-          </Grid>
+        <PanelCard
+          title="Disease registry"
+          subtitle="Compact catalog table backed by the paginated diseases API."
+          badge={`${rowCount} disease${rowCount === 1 ? '' : 's'}`}
+        >
+          <CatalogDiseasesTable
+            diseases={rows}
+            totalCount={rowCount}
+            isLoading={isLoading}
+            isFetching={isFetching}
+            pageIndex={pagination.pageIndex}
+            pageSize={pagination.pageSize}
+            sorting={sorting}
+            organTypeFilter={organTypeFilter}
+            selectedDiseaseId={selectedDisease?.id || ''}
+            onPaginationChange={handlePaginationChange}
+            onSortingChange={handleSortingChange}
+            onOrganTypeFilterChange={handleOrganTypeFilterChange}
+            onSelectDisease={handleSelectDisease}
+            onRefresh={() => refetch()}
+          />
+        </PanelCard>
 
-          <Grid size={{ xs: 12, lg: 5 }}>
-            <DiseaseDetailPanel disease={selectedDisease} />
-          </Grid>
-        </Grid>
+        <CatalogDiseaseSpreadMap
+          diseases={filteredSpreadMapDiseases}
+          isLoading={isSpreadMapLoading}
+          isError={isSpreadMapError}
+          onSelectDisease={handleSelectDisease}
+        />
       </Stack>
+
+      <CatalogDiseaseDetailDrawer
+        open={Boolean(selectedDisease)}
+        disease={selectedDisease}
+        onClose={handleCloseDiseaseDetails}
+      />
 
       <CreateDiseaseDialog
         key={createDialogSession}

@@ -7,6 +7,7 @@ import {
   DialogContent,
   DialogTitle,
   Grid,
+  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -18,6 +19,19 @@ function slugify(value) {
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function normalizeAiLabel(value) {
+  return (value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function buildDiseaseSlug(organType, name) {
+  const baseSlug = slugify(name);
+  return baseSlug ? `${organType}-${baseSlug}` : '';
 }
 
 function toFieldErrorMap(error) {
@@ -54,6 +68,8 @@ function resolveErrorMessage(error, fallbackMessage) {
 const INITIAL_FORM = {
   name: '',
   slug: '',
+  organ_type: 'fruit',
+  ai_label: '',
   summary: '',
   symptoms: '',
   prevention: '',
@@ -69,10 +85,16 @@ export default function CreateDiseaseDialog({
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState('');
   const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
+  const [isAiLabelManuallyEdited, setIsAiLabelManuallyEdited] = useState(false);
 
   const canSubmit = useMemo(
-    () => Boolean(form.name.trim() && form.slug.trim()),
-    [form.name, form.slug],
+    () => Boolean(
+      form.name.trim()
+      && form.slug.trim()
+      && form.organ_type
+      && form.ai_label.trim(),
+    ),
+    [form.ai_label, form.name, form.organ_type, form.slug],
   );
 
   const handleChange = (event) => {
@@ -83,7 +105,20 @@ export default function CreateDiseaseDialog({
         return {
           ...currentState,
           name: value,
-          slug: isSlugManuallyEdited ? currentState.slug : slugify(value),
+          slug: isSlugManuallyEdited
+            ? currentState.slug
+            : buildDiseaseSlug(currentState.organ_type, value),
+          ai_label: isAiLabelManuallyEdited ? currentState.ai_label : normalizeAiLabel(value),
+        };
+      }
+
+      if (name === 'organ_type') {
+        return {
+          ...currentState,
+          organ_type: value,
+          slug: isSlugManuallyEdited
+            ? currentState.slug
+            : buildDiseaseSlug(value, currentState.name),
         };
       }
 
@@ -91,9 +126,13 @@ export default function CreateDiseaseDialog({
         setIsSlugManuallyEdited(true);
       }
 
+      if (name === 'ai_label') {
+        setIsAiLabelManuallyEdited(true);
+      }
+
       return {
         ...currentState,
-        [name]: value,
+        [name]: name === 'ai_label' ? normalizeAiLabel(value) : value,
       };
     });
   };
@@ -107,6 +146,8 @@ export default function CreateDiseaseDialog({
       await onSubmit({
         name: form.name.trim(),
         slug: form.slug.trim(),
+        organ_type: form.organ_type,
+        ai_label: normalizeAiLabel(form.ai_label),
         summary: form.summary.trim(),
         symptoms: form.symptoms.trim(),
         prevention: form.prevention.trim(),
@@ -145,6 +186,36 @@ export default function CreateDiseaseDialog({
                 onChange={handleChange}
                 error={Boolean(errors.name)}
                 helperText={errors.name || ' '}
+                disabled={isSubmitting}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                required
+                select
+                label="Organ type"
+                name="organ_type"
+                value={form.organ_type}
+                onChange={handleChange}
+                error={Boolean(errors.organ_type)}
+                helperText={errors.organ_type || ' '}
+                disabled={isSubmitting}
+              >
+                <MenuItem value="fruit">Fruit</MenuItem>
+                <MenuItem value="leaf">Leaf</MenuItem>
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                required
+                label="AI label"
+                name="ai_label"
+                value={form.ai_label}
+                onChange={handleChange}
+                error={Boolean(errors.ai_label)}
+                helperText={errors.ai_label || ' '}
                 disabled={isSubmitting}
               />
             </Grid>

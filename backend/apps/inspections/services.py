@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils.text import slugify
 
-from apps.catalog.models import Disease
+from apps.catalog.models import Disease, normalize_ai_label
 from apps.devices.models import Device
 from apps.inference.models import InferenceIndex
 from apps.inspections.models import Inspection, InspectionMatch
@@ -21,6 +21,7 @@ def create_inspection_with_matches(*, inspection_data, matches_data=None):
     predicted_disease = _resolve_disease_reference(
         inspection_data.get("predicted_disease"),
         inspection_data.get("top1_label"),
+        inspection_data.get("organ_type"),
     )
 
     inspection_values = {
@@ -49,6 +50,7 @@ def create_inspection_with_matches(*, inspection_data, matches_data=None):
                 disease=_resolve_disease_reference(
                     match_data.get("disease"),
                     match_data.get("matched_label"),
+                    inspection_values["organ_type"],
                 ),
                 rank_order=match_data["rank_order"],
                 matched_label=match_data["matched_label"],
@@ -91,7 +93,7 @@ def _get_required_instance(model_class, value, field_name):
         raise ValidationError({field_name: "Referenced object does not exist."}) from exc
 
 
-def _resolve_disease_reference(disease, label):
+def _resolve_disease_reference(disease, label, organ_type=None):
     if isinstance(disease, Disease):
         return disease
 
@@ -108,9 +110,24 @@ def _resolve_disease_reference(disease, label):
     if not label:
         return None
 
-    return Disease.objects.filter(name__iexact=label).first() or Disease.objects.filter(
-        slug=slugify(label)
-    ).first()
+    normalized_label = normalize_ai_label(label)
+    if organ_type and normalized_label:
+        disease = Disease.objects.filter(
+            organ_type=organ_type,
+            ai_label=normalized_label,
+        ).first()
+        if disease is not None:
+            return disease
+
+    fallback_queryset = Disease.objects.all()
+    if organ_type:
+        fallback_queryset = fallback_queryset.filter(organ_type=organ_type)
+
+    return (
+        fallback_queryset.filter(name__iexact=label).first()
+        or fallback_queryset.filter(ai_label=normalized_label).first()
+        or fallback_queryset.filter(slug=slugify(label)).first()
+    )
 
 
 def _normalize_match_data(matches_data):

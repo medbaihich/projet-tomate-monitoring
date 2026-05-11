@@ -37,13 +37,13 @@ class ReviewRolePermissionTests(APITestCase):
             name="leaf-index",
             organ_type=InferenceIndex.OrganType.LEAF,
         )
-        self.predicted_disease = Disease.objects.create(
-            name="Target Spot",
-            slug="target-spot",
+        self.predicted_disease = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="leaf_curl",
         )
-        self.corrected_disease = Disease.objects.create(
-            name="Late Blight",
-            slug="late-blight",
+        self.corrected_disease = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="late_blight",
         )
         self.inspection = Inspection.objects.create(
             device=self.device,

@@ -29,12 +29,26 @@ class NotificationFixtureMixin:
             role=operator_role,
         )
         cls.device = Device.objects.get(identifier="demo-device-001")
+        cls.fruit_index = InferenceIndex.objects.get(
+            name="fruit-demo-index",
+            organ_type=InferenceIndex.OrganType.FRUIT,
+        )
         cls.leaf_index = InferenceIndex.objects.get(
             name="leaf-demo-index",
             organ_type=InferenceIndex.OrganType.LEAF,
         )
-        cls.healthy_disease = Disease.objects.get(name="Healthy")
-        cls.early_blight = Disease.objects.get(name="Early Blight")
+        cls.fruit_healthy_disease = Disease.objects.get(
+            organ_type=Disease.OrganType.FRUIT,
+            ai_label="healthy",
+        )
+        cls.healthy_disease = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="healthy",
+        )
+        cls.early_blight = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="early_blight",
+        )
 
     def create_inspection_payload(
         self,
@@ -42,13 +56,16 @@ class NotificationFixtureMixin:
         predicted_disease,
         top1_label,
         processing_status=Inspection.ProcessingStatus.COMPLETED,
+        organ_type=Inspection.OrganType.LEAF,
+        inference_index=None,
     ):
         now = timezone.now().replace(microsecond=0)
+        active_inference_index = inference_index or self.leaf_index
         return {
             "device": str(self.device.id),
-            "inference_index": str(self.leaf_index.id),
+            "inference_index": str(active_inference_index.id),
             "predicted_disease": str(predicted_disease.id) if predicted_disease else None,
-            "organ_type": Inspection.OrganType.LEAF,
+            "organ_type": organ_type,
             "status": Inspection.Status.NEW,
             "processing_status": processing_status,
             "source_message_id": f"notification-test-{now.timestamp()}",
@@ -75,13 +92,16 @@ class NotificationFixtureMixin:
         predicted_disease,
         top1_label,
         processing_status=Inspection.ProcessingStatus.COMPLETED,
+        organ_type=Inspection.OrganType.LEAF,
+        inference_index=None,
     ):
         now = timezone.now().replace(microsecond=0)
+        active_inference_index = inference_index or self.leaf_index
         return Inspection.objects.create(
             device=self.device,
-            inference_index=self.leaf_index,
+            inference_index=active_inference_index,
             predicted_disease=predicted_disease,
-            organ_type=Inspection.OrganType.LEAF,
+            organ_type=organ_type,
             status=Inspection.Status.NEW,
             processing_status=processing_status,
             source_message_id=f"service-notification-test-{now.timestamp()}",
@@ -125,6 +145,21 @@ class NotificationInspectionTriggerTests(NotificationFixtureMixin, APITestCase):
             data=self.create_inspection_payload(
                 predicted_disease=self.healthy_disease,
                 top1_label=self.healthy_disease.name,
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Notification.objects.count(), 0)
+
+    def test_does_not_create_notification_for_fruit_healthy_completed_inspection(self):
+        response = self.client.post(
+            reverse("inspection-list"),
+            data=self.create_inspection_payload(
+                predicted_disease=self.fruit_healthy_disease,
+                top1_label=self.fruit_healthy_disease.name,
+                organ_type=Inspection.OrganType.FRUIT,
+                inference_index=self.fruit_index,
             ),
             format="json",
         )
