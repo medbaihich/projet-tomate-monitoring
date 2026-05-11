@@ -736,7 +736,7 @@ export default function DashboardPage() {
             className="h-full"
             contentClassName="pt-0"
           >
-            <MapFoundation />
+            <MapFoundation enableDiseaseLayers />
           </DashboardSection>
 
           <div className="grid min-w-0 items-stretch gap-3 lg:grid-cols-12">

@@ -1,11 +1,13 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import viewsets
 from rest_framework import status
+from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.core.api import apply_query_filters
+from apps.inspections.map_signals import build_dashboard_map_signals
 from apps.inspections.services import create_inspection_with_matches
 from apps.inspections.models import Inspection, InspectionMatch
 from apps.inspections.serializers import (
@@ -17,6 +19,19 @@ from apps.notifications.services import (
     is_inspection_alert_eligible,
     maybe_create_disease_alert_notification,
 )
+
+
+class InspectionMapSignalsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            data = build_dashboard_map_signals(request.query_params)
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
+            raise DRFValidationError(detail)
+
+        return Response(data)
 
 
 class InspectionViewSet(viewsets.ModelViewSet):
