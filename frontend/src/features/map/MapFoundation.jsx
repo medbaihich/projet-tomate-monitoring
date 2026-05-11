@@ -42,13 +42,13 @@ const FALLBACK_ZONE_COLORS = {
   infection_zone: '#dc2626',
   vector_risk_zone: '#7c3aed',
   agronomic_risk_zone: '#d97706',
-  risk_zone: '#f59e0b',
+  risk_zone: '#2563eb',
   none: '#64748b',
 };
 const RISK_COLOR_FALLBACKS = {
-  critical: '#b91c1c',
-  high: '#dc2626',
-  medium: '#f59e0b',
+  critical: '#dc2626',
+  high: '#ea580c',
+  medium: '#d97706',
   low: '#16a34a',
 };
 const CONFIDENCE_FILTER_OPTIONS = [
@@ -63,6 +63,7 @@ const TIME_WINDOW_OPTIONS = [
   { value: '30d', label: 'Last 30d', hours: 24 * 30 },
   { value: '', label: 'All', hours: null },
 ];
+const FOCUSED_SIGNAL_RADIUS_REASON = 'Focused on the latest dashboard disease alert using the DB-backed disease map profile radius.';
 const deviceMarkerIcon = L.icon({
   iconRetinaUrl: markerIcon2x,
   iconUrl: markerIcon,
@@ -359,6 +360,54 @@ function createInfectionZonePopupContent(zone) {
   return wrapper;
 }
 
+function buildFocusedZoneFromSignal(signal) {
+  const radiusMeters = Number(signal?.spread_radius_m);
+  if (
+    !signal
+    || !Number.isFinite(radiusMeters)
+    || radiusMeters <= 0
+    || signal.zone_type === 'none'
+    || signal.profile_missing
+    || signal.profile_inactive
+  ) {
+    return null;
+  }
+
+  return {
+    id: `focused-zone-${signal.inspection_id}`,
+    disease_id: signal.disease_id,
+    disease_key: signal.disease_key,
+    ai_label: signal.ai_label,
+    disease_name: signal.disease_name,
+    severity: signal.severity,
+    organ_type: signal.organ_type,
+    is_infectious: signal.is_infectious,
+    spread_category: signal.spread_category,
+    transmission_mode: signal.transmission_mode,
+    zone_type: signal.zone_type,
+    spread_radius_m: signal.spread_radius_m,
+    radius_meters: radiusMeters,
+    risk_level: signal.risk_level,
+    map_color: signal.map_color,
+    map_label: signal.map_label,
+    short_map_description: signal.short_map_description,
+    profile_missing: signal.profile_missing,
+    profile_inactive: signal.profile_inactive,
+    center: {
+      latitude: signal.latitude,
+      longitude: signal.longitude,
+    },
+    radius_reason: FOCUSED_SIGNAL_RADIUS_REASON,
+    signal_count: 1,
+    max_confidence: signal.confidence,
+    latest_captured_at: signal.captured_at,
+    site_name: signal.site_name,
+    greenhouse_name: signal.greenhouse_name,
+    zone_name: signal.zone_name,
+    line_name: signal.line_name,
+  };
+}
+
 function getSemanticZoneStyle(zone) {
   const color = resolveSemanticColor(zone);
 
@@ -451,7 +500,7 @@ function DiseaseFilterControl({ label, value, onChange, children }) {
   );
 }
 
-function DiseaseMapLayerStatus({ query, summary }) {
+function DiseaseMapLayerStatus({ query, summary, hasDeviceFilter }) {
   if (query.isLoading) {
     return <Skeleton className="h-16 w-full" />;
   }
@@ -483,9 +532,11 @@ function DiseaseMapLayerStatus({ query, summary }) {
   if (summary.total_signals === 0) {
     return (
       <Alert>
-        <AlertTitle>No disease signals</AlertTitle>
+        <AlertTitle>{hasDeviceFilter ? 'No disease alerts for this device' : 'No disease alerts on the map yet'}</AlertTitle>
         <AlertDescription>
-          No disease signals match the current filters.
+          {hasDeviceFilter
+            ? 'This device has no mapped disease-positive inspections yet.'
+            : 'Disease-positive inspections will appear here when new alerts are received.'}
         </AlertDescription>
       </Alert>
     );
@@ -548,6 +599,7 @@ export default function MapFoundation({
   diseaseMapFilters = EMPTY_DISEASE_MAP_FILTERS,
   showFilters = true,
   selectedDeviceId = '',
+  focusInspectionId = '',
   onDeviceSelect,
   siteFilter: controlledSiteFilter,
   greenhouseFilter: controlledGreenhouseFilter,
@@ -571,6 +623,7 @@ export default function MapFoundation({
   const [severityFilter, setSeverityFilter] = useState('');
   const [minConfidenceFilter, setMinConfidenceFilter] = useState('');
   const [timeWindowFilter, setTimeWindowFilter] = useState('7d');
+  const deviceFilter = diseaseMapFilters.device ?? '';
   const siteFilter = controlledSiteFilter ?? internalSiteFilter;
   const greenhouseFilter = controlledGreenhouseFilter ?? internalGreenhouseFilter;
   const zoneFilter = controlledZoneFilter ?? internalZoneFilter;
@@ -626,7 +679,7 @@ export default function MapFoundation({
       'filter-options',
     ],
     queryFn: () => fetchDashboardDiseaseMapSignals(hierarchyDiseaseMapParams),
-    enabled: enableDiseaseLayers,
+    enabled: enableDiseaseLayers && showFilters,
     staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
@@ -636,6 +689,38 @@ export default function MapFoundation({
   const diseaseMapSummary = diseaseMapData?.summary ?? EMPTY_DISEASE_MAP_SUMMARY;
   const diseaseSignals = diseaseMapData?.signals ?? EMPTY_DISEASE_SIGNALS;
   const infectionZones = diseaseMapData?.infection_zones ?? EMPTY_INFECTION_ZONES;
+  const focusedDiseaseSignal = useMemo(
+    () => (focusInspectionId
+      ? diseaseSignals.find((signal) => signal.inspection_id === focusInspectionId) ?? null
+      : null),
+    [diseaseSignals, focusInspectionId],
+  );
+  const displayDiseaseSignals = useMemo(
+    () => (focusedDiseaseSignal ? [focusedDiseaseSignal] : focusInspectionId ? EMPTY_DISEASE_SIGNALS : diseaseSignals),
+    [diseaseSignals, focusInspectionId, focusedDiseaseSignal],
+  );
+  const displayInfectionZones = useMemo(() => {
+    if (!focusInspectionId) {
+      return infectionZones;
+    }
+
+    const focusedZone = buildFocusedZoneFromSignal(focusedDiseaseSignal);
+    return focusedZone ? [focusedZone] : EMPTY_INFECTION_ZONES;
+  }, [focusInspectionId, focusedDiseaseSignal, infectionZones]);
+  const displayDiseaseMapSummary = useMemo(() => {
+    if (!focusInspectionId) {
+      return diseaseMapSummary;
+    }
+
+    const mappedSignals = displayDiseaseSignals.length;
+
+    return {
+      total_signals: mappedSignals,
+      mapped_signals: mappedSignals,
+      unmapped_signals: 0,
+      infection_zone_count: displayInfectionZones.length,
+    };
+  }, [diseaseMapSummary, displayDiseaseSignals.length, displayInfectionZones.length, focusInspectionId]);
   const diseaseOptions = diseaseMapFilterOptionsQuery.data?.filters?.available_diseases
     ?? diseaseMapData?.filters?.available_diseases
     ?? EMPTY_DISEASE_OPTIONS;
@@ -648,12 +733,13 @@ export default function MapFoundation({
   };
   const filteredDevices = useMemo(
     () => devices.filter((device) => (
-      (!siteFilter || device.site === siteFilter)
+      (!deviceFilter || device.id === deviceFilter)
+      && (!siteFilter || device.site === siteFilter)
       && (!greenhouseFilter || device.greenhouse === greenhouseFilter)
       && (!zoneFilter || device.zone === zoneFilter)
       && (!lineFilter || device.line === lineFilter)
     )),
-    [devices, greenhouseFilter, lineFilter, siteFilter, zoneFilter],
+    [deviceFilter, devices, greenhouseFilter, lineFilter, siteFilter, zoneFilter],
   );
   const mappedDevices = useMemo(
     () => filteredDevices.filter(hasGeoCoordinates),
@@ -714,7 +800,7 @@ export default function MapFoundation({
     });
 
     if (enableDiseaseLayers) {
-      infectionZones.forEach((zone) => {
+      displayInfectionZones.forEach((zone) => {
         const position = toValidPosition(zone.center?.latitude, zone.center?.longitude);
         const radius = Number(zone.radius_meters);
 
@@ -738,7 +824,7 @@ export default function MapFoundation({
         diseaseBounds.extend(position);
       });
 
-      diseaseSignals.forEach((signal) => {
+      displayDiseaseSignals.forEach((signal) => {
         const position = toValidPosition(signal.latitude, signal.longitude);
         if (!position) {
           return;
@@ -786,9 +872,9 @@ export default function MapFoundation({
     };
   }, [
     diseaseFiltersActive,
-    diseaseSignals,
+    displayDiseaseSignals,
+    displayInfectionZones,
     enableDiseaseLayers,
-    infectionZones,
     mappedDevices,
     onDeviceSelect,
     selectedDeviceId,
@@ -917,7 +1003,7 @@ export default function MapFoundation({
           </div>
         ) : null}
 
-        {enableDiseaseLayers ? (
+        {showFilters && enableDiseaseLayers ? (
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
             <DiseaseFilterControl
               label="Disease"
@@ -970,9 +1056,9 @@ export default function MapFoundation({
           <Badge variant="outline">{unmappedDeviceCount} unmapped</Badge>
           {enableDiseaseLayers ? (
             <>
-              <Badge variant="outline">{diseaseMapSummary.mapped_signals} disease signals</Badge>
-              <Badge variant="outline">{diseaseMapSummary.infection_zone_count} estimated zones</Badge>
-              <Badge variant="outline">{diseaseMapSummary.unmapped_signals} unmapped signals</Badge>
+              <Badge variant="outline">{displayDiseaseMapSummary.mapped_signals} disease signals</Badge>
+              <Badge variant="outline">{displayDiseaseMapSummary.infection_zone_count} estimated zones</Badge>
+              <Badge variant="outline">{displayDiseaseMapSummary.unmapped_signals} unmapped signals</Badge>
             </>
           ) : null}
           <Button
@@ -1012,7 +1098,8 @@ export default function MapFoundation({
       {enableDiseaseLayers ? (
         <DiseaseMapLayerStatus
           query={diseaseMapSignalsQuery}
-          summary={diseaseMapSummary}
+          summary={displayDiseaseMapSummary}
+          hasDeviceFilter={Boolean(deviceFilter)}
         />
       ) : null}
 

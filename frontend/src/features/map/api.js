@@ -14,6 +14,7 @@ const DISEASE_MAP_SIGNAL_PARAM_NAMES = [
   'zone',
   'line',
   'organ_type',
+  'device',
 ];
 
 async function fetchAllPages(initialUrl) {

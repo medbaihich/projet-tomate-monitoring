@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   useMutation,
@@ -8,7 +8,6 @@ import {
 import { Alert as MuiAlert, Snackbar } from '@mui/material';
 import {
   ClipboardList,
-  BellRing,
   ClipboardCheck,
   Cpu,
   RefreshCcw,
@@ -23,20 +22,31 @@ import {
 import {
   formatDashboardConfidence,
   formatDashboardCount,
-  formatDashboardDateTime,
 } from '@/features/dashboard/components/dashboardPresentation';
+import {
+  buildDiseaseAlertCountLabel,
+  buildUnreadDiseaseAlertLine,
+  getHighestDashboardRisk,
+  resolveNotificationDiseaseRecord,
+  resolveNotificationAlertTimestamp,
+  selectLatestDiseaseAlert,
+  selectPriorityDiseaseAlert,
+  sortDiseaseAlertsByPriority,
+} from '@/features/dashboard/utils';
 import DashboardEmptyState from '@/features/dashboard/components/DashboardEmptyState';
 import DashboardErrorState from '@/features/dashboard/components/DashboardErrorState';
 import DashboardLoadingState from '@/features/dashboard/components/DashboardLoadingState';
 import DashboardMetricCard from '@/features/dashboard/components/DashboardMetricCard';
+import DiseaseSignalsDrawer from '@/features/dashboard/DiseaseSignalsDrawer';
 import DashboardSection from '@/features/dashboard/components/DashboardSection';
 import DashboardStatusBadge from '@/features/dashboard/components/DashboardStatusBadge';
+import PendingReviewsDrawer from '@/features/dashboard/PendingReviewsDrawer';
 import { Button } from '@/components/ui/button';
 import MapFoundation from '@/features/map/MapFoundation';
+import { DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY } from '@/features/map/api';
 import {
   fetchNotificationsPage,
   fetchUnreadNotificationsCount,
-  markAllNotificationsRead,
   markNotificationRead,
   NOTIFICATIONS_PAGE_SIZE,
 } from '@/features/notifications/api';
@@ -47,7 +57,8 @@ import useAuthStore from '@/store/authStore';
 const NOTIFICATIONS_QUERY_KEY = ['dashboard-notifications'];
 const UNREAD_COUNT_QUERY_KEY = ['dashboard-notifications-unread-count'];
 const DASHBOARD_REFERENCE_QUERY_KEY = ['dashboard-reference-data'];
-const DASHBOARD_REFRESH_DEBOUNCE_MS = 15000;
+const DASHBOARD_MAP_REFRESH_DEBOUNCE_MS = 1500;
+const DASHBOARD_MAP_SELECT_CLASS = 'h-9 min-w-[16rem] rounded-md border border-white/10 bg-black/20 px-3 text-sm text-slate-100 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950';
 
 function buildNotificationsWebSocketUrl(accessToken) {
   if (!accessToken || typeof window === 'undefined') {
@@ -83,23 +94,6 @@ function updateNotificationInPage(previousData, updatedNotification) {
     ...previousData,
     results: previousData.results.map((notification) => (
       notification.id === updatedNotification.id ? updatedNotification : notification
-    )),
-  };
-}
-
-function markAllNotificationsAsReadInPage(previousData) {
-  if (!previousData?.results?.length) {
-    return previousData;
-  }
-
-  const markedAt = new Date().toISOString();
-
-  return {
-    ...previousData,
-    results: previousData.results.map((notification) => (
-      notification.is_read
-        ? notification
-        : { ...notification, is_read: true, read_at: markedAt }
     )),
   };
 }
@@ -157,16 +151,7 @@ function resolveLatestAlertDeviceLabel(notification) {
 }
 
 function resolveDiseaseRecord(notification, diseases) {
-  if (!notification) {
-    return null;
-  }
-
-  if (notification.disease) {
-    return diseases.find((disease) => disease.id === notification.disease) ?? null;
-  }
-
-  const normalizedLabel = normalizeLabel(notification.display_disease_label);
-  return diseases.find((disease) => normalizeLabel(disease.name) === normalizedLabel) ?? null;
+  return resolveNotificationDiseaseRecord(notification, diseases)
 }
 
 function resolveInspectionTimestamp(inspection) {
@@ -210,78 +195,32 @@ function formatLastUpdatedLabel(value) {
   return `Updated ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-function MetricMeta({ label, value, tone = 'neutral' }) {
-  return (
-    <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
-      <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-      <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2">
-        <p className="truncate text-sm font-semibold tracking-[-0.03em] text-slate-50">{value}</p>
-        <DashboardStatusBadge label={label} tone={tone} className="hidden shrink-0 sm:inline-flex" />
-      </div>
-    </div>
-  );
+function formatRiskPillLabel(riskLevel) {
+  if (!riskLevel) {
+    return 'NO ACTIVE RISK'
+  }
+
+  return `${riskLevel.toUpperCase()} RISK`
 }
 
-function NotificationPreviewItem({ notification, onOpenNotification }) {
-  const diseaseLabel = formatDiseaseLabel(notification.display_disease_label || notification.title);
-  const severityTone = notification.severity === 'high' ? 'alert' : 'review';
+function resolveRiskPillClasses(riskLevel) {
+  if (riskLevel === 'critical') {
+    return 'border-red-300/35 bg-red-500/18 text-red-50'
+  }
 
-  return (
-    <button
-      type="button"
-      onClick={() => onOpenNotification(notification)}
-      className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.07]"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <p className="truncate text-sm font-semibold text-slate-100">{diseaseLabel}</p>
-          <p className="line-clamp-1 text-xs leading-5 text-slate-400">{notification.message}</p>
-        </div>
-        <div className="shrink-0 text-right">
-          <DashboardStatusBadge
-            label={notification.is_read ? 'Read' : 'Unread'}
-            tone={notification.is_read ? 'neutral' : 'alert'}
-          />
-          <DashboardStatusBadge
-            label={notification.severity === 'high' ? 'High' : 'Alert'}
-            tone={severityTone}
-            className="mt-1 hidden sm:inline-flex"
-          />
-        </div>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-3 text-[0.68rem] font-medium text-slate-500">
-        <span>{formatDashboardConfidence(notification.confidence_score)}</span>
-        <span>{formatDashboardDateTime(notification.created_at)}</span>
-      </div>
-    </button>
-  );
-}
+  if (riskLevel === 'high') {
+    return 'border-red-400/20 bg-red-500/10 text-red-200'
+  }
 
-function ReviewPreviewItem({ inspection, onOpenReviewItem }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onOpenReviewItem(inspection)}
-      className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.07]"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <p className="truncate text-sm font-semibold text-slate-100">
-            {formatDiseaseLabel(inspection.top1_label || 'Manual review')}
-          </p>
-          <p className="line-clamp-1 text-xs leading-5 text-slate-400">
-            {inspection.device_label || 'Unknown device'}
-          </p>
-        </div>
-        <DashboardStatusBadge label="Review required" tone="review" />
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-3 text-[0.68rem] font-medium text-slate-500">
-        <span>{formatDashboardConfidence(inspection.confidence_score)}</span>
-        <span>{inspection.organ_type || 'Unknown organ'}</span>
-        <span>{formatDashboardDateTime(inspection.captured_at)}</span>
-      </div>
-    </button>
-  );
+  if (riskLevel === 'medium') {
+    return 'border-amber-300/24 bg-amber-500/12 text-amber-100'
+  }
+
+  if (riskLevel === 'low') {
+    return 'border-emerald-300/24 bg-emerald-500/10 text-emerald-100'
+  }
+
+  return 'border-white/10 bg-black/20 text-slate-400'
 }
 
 function ProcessingPipeline({ data }) {
@@ -347,7 +286,11 @@ export default function DashboardPage() {
   const accessToken = useAuthStore((state) => state.accessToken);
   const [selectedNotificationId, setSelectedNotificationId] = useState(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isDiseaseSignalsOpen, setIsDiseaseSignalsOpen] = useState(false);
+  const [isPendingReviewsOpen, setIsPendingReviewsOpen] = useState(false);
   const [liveAlert, setLiveAlert] = useState(null);
+  const [selectedMapDeviceId, setSelectedMapDeviceId] = useState('');
+  const selectedMapDeviceIdRef = useRef('');
 
   const {
     data,
@@ -406,16 +349,9 @@ export default function DashboardPage() {
     },
   });
 
-  const markAllReadMutation = useMutation({
-    mutationFn: markAllNotificationsRead,
-    onSuccess: () => {
-      queryClient.setQueryData(
-        NOTIFICATIONS_QUERY_KEY,
-        (previousData) => markAllNotificationsAsReadInPage(previousData),
-      );
-      queryClient.setQueryData(UNREAD_COUNT_QUERY_KEY, 0);
-    },
-  });
+  useEffect(() => {
+    selectedMapDeviceIdRef.current = selectedMapDeviceId;
+  }, [selectedMapDeviceId]);
 
   useEffect(() => {
     const websocketUrl = buildNotificationsWebSocketUrl(accessToken);
@@ -425,7 +361,7 @@ export default function DashboardPage() {
 
     let socket;
     let reconnectTimeoutId;
-    let dashboardRefreshTimeoutId;
+    let dashboardMapRefreshTimeoutId;
     let reconnectAttempts = 0;
     let isDisposed = false;
 
@@ -465,13 +401,22 @@ export default function DashboardPage() {
             setLiveAlert(payload.notification);
           }
 
-          // These charts still depend on the existing Phase 2 dashboard summary shape,
-          // so live notification bursts are coalesced before refreshing the heavy query.
-          if (!dashboardRefreshTimeoutId) {
-            dashboardRefreshTimeoutId = window.setTimeout(() => {
-              dashboardRefreshTimeoutId = null;
-              queryClient.invalidateQueries({ queryKey: ['dashboard-operations'] });
-            }, DASHBOARD_REFRESH_DEBOUNCE_MS);
+          if (!dashboardMapRefreshTimeoutId) {
+            dashboardMapRefreshTimeoutId = window.setTimeout(() => {
+              dashboardMapRefreshTimeoutId = null;
+              queryClient.invalidateQueries({
+                predicate: (query) => {
+                  const queryKey = query.queryKey;
+                  return (
+                    Array.isArray(queryKey)
+                    && queryKey[0] === DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY[0]
+                    && queryKey[1] === DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY[1]
+                    && queryKey[2] === DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY[2]
+                    && !queryKey.includes('filter-options')
+                  );
+                },
+              });
+            }, DASHBOARD_MAP_REFRESH_DEBOUNCE_MS);
           }
         } catch {
           // Ignore malformed websocket payloads and fall back to REST refreshes.
@@ -502,8 +447,8 @@ export default function DashboardPage() {
       if (reconnectTimeoutId) {
         window.clearTimeout(reconnectTimeoutId);
       }
-      if (dashboardRefreshTimeoutId) {
-        window.clearTimeout(dashboardRefreshTimeoutId);
+      if (dashboardMapRefreshTimeoutId) {
+        window.clearTimeout(dashboardMapRefreshTimeoutId);
       }
 
       if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
@@ -516,36 +461,59 @@ export default function DashboardPage() {
     () => notificationsQuery.data?.results ?? [],
     [notificationsQuery.data?.results],
   );
-  const unreadCount = typeof unreadCountQuery.data === 'number'
-    ? unreadCountQuery.data
-    : notifications.filter((notification) => !notification.is_read).length;
-  const latestNotification = notifications[0] ?? null;
-  const latestAlertDiseaseLabel = formatDiseaseLabel(
-    latestNotification?.display_disease_label || latestNotification?.title,
+  const diseases = useMemo(
+    () => dashboardReferenceQuery.data?.diseases ?? [],
+    [dashboardReferenceQuery.data?.diseases],
   );
-  const latestAlertReadStateLabel = latestNotification
-    ? latestNotification.is_read
+  const orderedDiseaseAlerts = useMemo(
+    () => sortDiseaseAlertsByPriority(notifications, diseases),
+    [notifications, diseases],
+  )
+  const latestDiseaseAlert = useMemo(
+    () => selectLatestDiseaseAlert(orderedDiseaseAlerts),
+    [orderedDiseaseAlerts],
+  )
+  const priorityDiseaseAlert = useMemo(
+    () => selectPriorityDiseaseAlert(orderedDiseaseAlerts, diseases),
+    [diseases, orderedDiseaseAlerts],
+  )
+  const latestAlertDiseaseLabel = formatDiseaseLabel(
+    latestDiseaseAlert?.display_disease_label || latestDiseaseAlert?.title,
+  );
+  const latestAlertReadStateLabel = latestDiseaseAlert
+    ? latestDiseaseAlert.is_read
       ? 'Read'
       : 'Unread'
     : 'No alert';
-  const latestAlertConfidenceLabel = latestNotification
-    ? `Confidence ${formatDashboardConfidence(latestNotification.confidence_score)}`
+  const latestAlertCountLabel = buildDiseaseAlertCountLabel(orderedDiseaseAlerts) ?? latestAlertReadStateLabel
+  const unreadDiseaseAlertLine = buildUnreadDiseaseAlertLine(orderedDiseaseAlerts)
+  const latestAlertConfidenceLabel = latestDiseaseAlert
+    ? `Confidence ${formatDashboardConfidence(latestDiseaseAlert.confidence_score)}`
     : 'No current disease alert';
-  const latestAlertDeviceLabel = resolveLatestAlertDeviceLabel(latestNotification);
-  const latestAlertTimestampLabel = formatAlertTimestamp(latestNotification?.created_at);
-  const latestAlertRiskLabel = latestNotification
-    ? latestNotification.severity === 'high'
-      ? 'High risk'
-      : 'Medium risk'
-    : 'No risk';
+  const latestAlertDeviceLabel = resolveLatestAlertDeviceLabel(latestDiseaseAlert);
+  const latestAlertTimestampLabel = formatAlertTimestamp(resolveNotificationAlertTimestamp(latestDiseaseAlert));
+  const highestActiveRiskLevel = useMemo(
+    () => getHighestDashboardRisk(orderedDiseaseAlerts, diseases),
+    [diseases, orderedDiseaseAlerts],
+  )
+  const hasUnreadLatestAlert = Boolean(latestDiseaseAlert && !latestDiseaseAlert.is_read);
 
   const deviceMap = useMemo(
     () => new Map((dashboardReferenceQuery.data?.devices ?? []).map((device) => [device.id, device])),
     [dashboardReferenceQuery.data?.devices],
   );
   const diseaseMap = useMemo(
-    () => new Map((dashboardReferenceQuery.data?.diseases ?? []).map((disease) => [disease.id, disease])),
-    [dashboardReferenceQuery.data?.diseases],
+    () => new Map(diseases.map((disease) => [disease.id, disease])),
+    [diseases],
+  );
+  const dashboardMapDeviceOptions = useMemo(
+    () => [...(dashboardReferenceQuery.data?.devices ?? [])]
+      .map((device) => ({
+        id: device.id,
+        label: `${device.name} (${device.identifier})`,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+    [dashboardReferenceQuery.data?.devices],
   );
   const reviewActionItems = useMemo(
     () => (data?.pendingReviewQueue ?? []).map((inspection) => ({
@@ -577,11 +545,6 @@ export default function DashboardPage() {
     [data?.allInspections, selectedDisease, selectedNotification, diseaseMap],
   );
 
-  const previewNotifications = notifications
-    .filter((notification) => notification.id !== latestNotification?.id)
-    .slice(0, 2);
-  const previewReviewItems = reviewActionItems.slice(0, 1);
-
   const handleOpenNotification = (notification) => {
     setSelectedNotificationId(notification.id);
     setIsDetailOpen(true);
@@ -594,17 +557,37 @@ export default function DashboardPage() {
   const handleCloseNotification = () => {
     setIsDetailOpen(false);
   };
+  const handleOpenDiseaseSignals = () => {
+    if (!priorityDiseaseAlert) {
+      return
+    }
+
+    if (orderedDiseaseAlerts.length > 1) {
+      setIsDiseaseSignalsOpen(true)
+      return
+    }
+
+    handleOpenNotification(priorityDiseaseAlert)
+  }
+  const handleCloseDiseaseSignals = () => {
+    setIsDiseaseSignalsOpen(false)
+  }
+  const handleOpenPendingReviews = () => {
+    if (summary.pendingReviewCount > 0) {
+      setIsPendingReviewsOpen(true);
+    }
+  };
+  const handleClosePendingReviews = () => {
+    setIsPendingReviewsOpen(false);
+  };
 
   const handleOpenReviewItem = (inspection) => {
+    setIsPendingReviewsOpen(false);
     navigate('/review', {
       state: {
         focusInspectionId: inspection.id,
       },
     });
-  };
-
-  const handleOpenReviewWorkspace = () => {
-    navigate('/review');
   };
 
   if (isLoading || dashboardReferenceQuery.isLoading) {
@@ -653,11 +636,11 @@ export default function DashboardPage() {
 
               <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
                 <DashboardStatusBadge
-                  label={latestNotification ? 'Alert active' : 'System stable'}
-                  tone={latestNotification ? 'alert' : 'completed'}
+                  label={priorityDiseaseAlert ? 'Alert active' : 'System stable'}
+                  tone={priorityDiseaseAlert ? 'alert' : 'completed'}
                 />
-                <span className="rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-red-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                  {latestNotification ? latestAlertRiskLabel : 'No active risk'}
+                <span className={`rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${resolveRiskPillClasses(highestActiveRiskLevel)}`}>
+                  {formatRiskPillLabel(highestActiveRiskLevel)}
                 </span>
                 <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.12em] text-slate-400">
                   {formatLastUpdatedLabel(dataUpdatedAt)}
@@ -709,149 +692,86 @@ export default function DashboardPage() {
               title="Disease Signal"
               value={latestAlertDiseaseLabel}
               helper={latestAlertDeviceLabel}
-              accent={latestNotification ? 'alert' : 'neutral'}
+              secondaryHelper={unreadDiseaseAlertLine}
+              accent={hasUnreadLatestAlert ? 'danger' : priorityDiseaseAlert ? 'alert' : 'neutral'}
               icon={<ShieldAlert className="h-5 w-5" />}
-              chipLabel={latestAlertReadStateLabel}
+              chipLabel={latestAlertCountLabel}
               trendLabel={latestAlertConfidenceLabel}
               footerLabel={latestAlertTimestampLabel}
-              className="min-w-0 w-full h-full border-red-400/25"
+              className="min-w-0 w-full h-full"
+              onClick={latestDiseaseAlert ? handleOpenDiseaseSignals : undefined}
+              disabled={!latestDiseaseAlert}
+              ariaLabel={latestDiseaseAlert ? `Open disease signal details for ${latestAlertDiseaseLabel}` : 'No disease signal available'}
+              pulse={hasUnreadLatestAlert}
+              emphasized={hasUnreadLatestAlert}
             />
             <DashboardMetricCard
               title="Pending Reviews"
               value={formatDashboardCount(summary.pendingReviewCount)}
               helper="Low-confidence inspections awaiting review."
-              accent="success"
+              accent={summary.pendingReviewCount > 0 ? 'warning' : 'success'}
               icon={<ClipboardCheck className="h-5 w-5" />}
               chipLabel="Review queue"
               trendLabel={`${formatDashboardCount(summary.reviewCount)} completed`}
               footerLabel="Review rule preserved from Phase 2"
               className="min-w-0 w-full h-full"
+              onClick={summary.pendingReviewCount > 0 ? handleOpenPendingReviews : undefined}
+              disabled={summary.pendingReviewCount === 0}
+              ariaLabel={summary.pendingReviewCount > 0 ? 'Open pending reviews queue' : 'No pending reviews available'}
             />
           </section>
 
           <DashboardSection
             title="Device Location Overview"
-            subtitle="Approximate mapped device positions across the current hierarchy."
+            subtitle="Approximate mapped device positions and disease zones using DB-backed profile semantics."
             badgeLabel="Map foundation"
             className="h-full"
             contentClassName="pt-0"
           >
-            <MapFoundation enableDiseaseLayers />
+            <div className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-slate-400">
+                  <span>Device</span>
+                  <select
+                    value={selectedMapDeviceId}
+                    onChange={(event) => setSelectedMapDeviceId(event.target.value)}
+                    className={DASHBOARD_MAP_SELECT_CLASS}
+                    aria-label="Filter dashboard map by device"
+                  >
+                    <option value="">All devices</option>
+                    {dashboardMapDeviceOptions.map((device) => (
+                      <option key={device.id} value={device.id}>
+                        {device.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="text-xs text-slate-500">
+                  Device is the only dashboard map filter in this limited Phase 8 scope.
+                </p>
+              </div>
+
+              <MapFoundation
+                enableDiseaseLayers
+                showFilters={false}
+                selectedDeviceId={selectedMapDeviceId}
+                focusInspectionId={latestDiseaseAlert?.inspection || ''}
+                diseaseMapFilters={{
+                  device: selectedMapDeviceId,
+                }}
+              />
+            </div>
           </DashboardSection>
 
-          <div className="grid min-w-0 items-stretch gap-3 lg:grid-cols-12">
-            <DashboardSection
-              title="Review & Notifications"
-              subtitle="Priority queue for unread alerts and low-confidence inspections that require human action."
-              badgeLabel="Priority queues"
-              action={(
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => markAllReadMutation.mutate()}
-                  disabled={unreadCount === 0 || markAllReadMutation.isPending || notificationsQuery.isLoading}
-                  className="rounded-full border-white/10 bg-white/[0.05] text-slate-100 hover:bg-white/[0.1]"
-                >
-                  Mark all read
-                </Button>
-              )}
-              className="h-full lg:col-span-12"
-              contentClassName="pt-0"
-            >
-              <div className="space-y-2.5">
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <MetricMeta label="Unread alerts" value={formatDashboardCount(unreadCount)} tone={unreadCount > 0 ? 'alert' : 'neutral'} />
-                  <MetricMeta label="Pending reviews" value={formatDashboardCount(summary.pendingReviewCount)} tone={summary.pendingReviewCount > 0 ? 'review' : 'completed'} />
-                  <MetricMeta label="Reference diseases" value={formatDashboardCount(summary.diseaseCount)} tone="completed" />
-                </div>
-
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <BellRing className="h-4 w-4 text-red-300" />
-                        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-100">Latest alerts</h3>
-                      </div>
-                      <span className="text-xs font-medium text-slate-500">{formatDashboardCount(notifications.length)} shown</span>
-                    </div>
-                    {notificationsQuery.isError ? (
-                      <DashboardErrorState
-                        title="Alerts unavailable"
-                        message={notificationsQuery.error?.response?.data?.detail || notificationsQuery.error?.message || 'Failed to load disease alerts.'}
-                        onRetry={() => {
-                          notificationsQuery.refetch();
-                          unreadCountQuery.refetch();
-                        }}
-                        framed={false}
-                      />
-                    ) : previewNotifications.length === 0 ? (
-                      <DashboardEmptyState
-                        title="No additional alerts"
-                        message="Disease alert notifications will appear here when they are available."
-                        badgeLabel="Alerts"
-                        framed={false}
-                      />
-                    ) : (
-                      <div className="space-y-2">
-                        {previewNotifications.map((notification) => (
-                          <NotificationPreviewItem
-                            key={notification.id}
-                            notification={notification}
-                            onOpenNotification={handleOpenNotification}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <ClipboardCheck className="h-4 w-4 text-amber-300" />
-                        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-100">Review queue</h3>
-                      </div>
-                      <button
-                        type="button"
-                        className="text-xs font-semibold text-emerald-300 transition-colors hover:text-emerald-200"
-                        onClick={handleOpenReviewWorkspace}
-                      >
-                        Open workspace
-                      </button>
-                    </div>
-                    {previewReviewItems.length === 0 ? (
-                      <DashboardEmptyState
-                        title="Review queue is clear"
-                        message="Low-confidence inspections will appear here when manual review is required."
-                        badgeLabel="Review"
-                        framed={false}
-                      />
-                    ) : (
-                      <div className="space-y-2">
-                        {previewReviewItems.map((inspection) => (
-                          <ReviewPreviewItem
-                            key={inspection.id}
-                            inspection={inspection}
-                            onOpenReviewItem={handleOpenReviewItem}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </DashboardSection>
-
-            <DashboardSection
-              title="Inspection Activity"
-              subtitle="Capture volume across the current seven-day activity window."
-              badgeLabel="Recent activity"
-              className="h-full lg:col-span-12"
-              contentClassName="pt-0"
-            >
-              <ActivityLineChart data={summary.inspectionActivity} />
-            </DashboardSection>
-          </div>
+          <DashboardSection
+            title="Inspection Activity"
+            subtitle="Capture volume across the current seven-day activity window."
+            badgeLabel="Recent activity"
+            className="h-full"
+            contentClassName="pt-0"
+          >
+            <ActivityLineChart data={summary.inspectionActivity} />
+          </DashboardSection>
 
           <div className="grid min-w-0 grid-cols-1 items-stretch gap-3 md:grid-cols-2 xl:grid-cols-4">
             <DashboardSection
@@ -935,6 +855,24 @@ export default function DashboardPage() {
         relatedInspections={relatedInspections}
         deviceMap={deviceMap}
         diseaseMap={diseaseMap}
+      />
+
+      <DiseaseSignalsDrawer
+        open={isDiseaseSignalsOpen}
+        onClose={handleCloseDiseaseSignals}
+        notifications={orderedDiseaseAlerts}
+        diseases={diseases}
+        onSelectNotification={(notification) => {
+          setIsDiseaseSignalsOpen(false)
+          handleOpenNotification(notification)
+        }}
+      />
+
+      <PendingReviewsDrawer
+        open={isPendingReviewsOpen}
+        onClose={handleClosePendingReviews}
+        inspections={reviewActionItems}
+        onSelectInspection={handleOpenReviewItem}
       />
 
       <Snackbar

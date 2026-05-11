@@ -24,6 +24,7 @@ export default function DashboardSection({
   className,
   contentClassName,
   tone = 'default',
+  style,
 }) {
   return (
     <Card
@@ -32,6 +33,7 @@ export default function DashboardSection({
         toneClasses[tone] ?? toneClasses.default,
         className,
       )}
+      style={style}
     >
       {(title || subtitle || badgeLabel || action) ? (
         <>

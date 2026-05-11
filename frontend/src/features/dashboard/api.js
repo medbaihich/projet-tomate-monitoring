@@ -200,7 +200,7 @@ export async function fetchDashboardData() {
       .map((inspection) => inspection.id),
   );
   const reviewedEligibleInspectionCount = allReviews.filter((review) => eligibleInspectionIds.has(review.inspection)).length;
-  const pendingReviewQueue = buildPendingReviewQueue(recentInspections, reviewedInspectionIds, 6);
+  const pendingReviewQueue = buildPendingReviewQueue(allInspections, reviewedInspectionIds, null);
   const averageConfidence = calculateAverageConfidence(allInspections);
   const recentInspectionCount = countRecentItems(allInspections, 'captured_at', 7);
   const pendingReviewCount = countPendingReviewableInspections(allInspections, reviewedInspectionIds);
