@@ -162,3 +162,92 @@ class InspectionCreateSerializer(serializers.Serializer):
         attrs.setdefault("extra_metadata", {})
         attrs.setdefault("matches", [])
         return attrs
+
+
+class AIResultMatchIngestionSerializer(serializers.Serializer):
+    rank_order = serializers.IntegerField(min_value=1, required=False)
+    matched_label = serializers.CharField()
+    similarity_score = serializers.FloatField()
+    metadata_json = serializers.JSONField(required=False)
+
+    def validate_similarity_score(self, value):
+        if not 0 <= value <= 1:
+            raise serializers.ValidationError("Similarity score must be between 0 and 1.")
+        return value
+
+
+class AIResultIngestionSerializer(serializers.Serializer):
+    schema_version = serializers.ChoiceField(choices=("ai-worker-result.v1",))
+    message_type = serializers.ChoiceField(choices=("ai_inference_result",))
+    source_schema_version = serializers.CharField(required=False, allow_blank=True)
+    source_message_id = serializers.CharField()
+    device_identifier = serializers.CharField()
+    captured_at = serializers.DateTimeField()
+    received_at = serializers.DateTimeField()
+    processed_at = serializers.DateTimeField()
+    feature_model = serializers.CharField()
+    feature_dim = serializers.IntegerField(min_value=1)
+    l2_normalized = serializers.BooleanField()
+    declared_vector_norm = serializers.FloatField(required=False, allow_null=True)
+    input_vector_norm = serializers.FloatField(required=False, allow_null=True)
+    normalized_vector_norm = serializers.FloatField(required=False, allow_null=True)
+    organ_type = serializers.ChoiceField(choices=Inspection.OrganType.choices)
+    organ_confidence = serializers.FloatField(required=False, allow_null=True)
+    organ_status = serializers.CharField(required=False, allow_blank=True)
+    top1_label = serializers.CharField(required=False, allow_blank=True)
+    top1_score = serializers.FloatField(required=False, allow_null=True)
+    confidence_score = serializers.FloatField(required=False, allow_null=True)
+    confidence_score_kind = serializers.CharField(required=False, allow_blank=True)
+    majority_label = serializers.CharField(required=False, allow_blank=True)
+    final_label = serializers.CharField(required=False, allow_blank=True)
+    index_used = serializers.CharField(required=False, allow_blank=True)
+    metadata_used = serializers.CharField(required=False, allow_blank=True)
+    matches = AIResultMatchIngestionSerializer(many=True, required=False)
+    processing_status = serializers.CharField(required=False, allow_blank=True)
+    requires_review = serializers.BooleanField(required=False)
+    warnings = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+    )
+    skip_reasons = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+    )
+    extra_metadata = serializers.JSONField(required=False)
+
+    def validate_source_message_id(self, value):
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("This field may not be blank.")
+        return normalized
+
+    def validate_device_identifier(self, value):
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("This field may not be blank.")
+        return normalized
+
+    def validate_confidence_score(self, value):
+        if value is not None and not 0 <= value <= 1:
+            raise serializers.ValidationError("Confidence score must be between 0 and 1.")
+        return value
+
+    def validate_organ_confidence(self, value):
+        if value is not None and not 0 <= value <= 1:
+            raise serializers.ValidationError("Organ confidence must be between 0 and 1.")
+        return value
+
+    def validate_top1_score(self, value):
+        if value is not None and not 0 <= value <= 1:
+            raise serializers.ValidationError("Top-1 score must be between 0 and 1.")
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        attrs.setdefault("matches", [])
+        attrs.setdefault("warnings", [])
+        attrs.setdefault("skip_reasons", [])
+        attrs.setdefault("extra_metadata", {})
+        attrs.setdefault("requires_review", False)
+        attrs.setdefault("processing_status", "")
+        return attrs

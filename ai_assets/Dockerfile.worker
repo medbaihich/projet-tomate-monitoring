@@ -1,0 +1,14 @@
+FROM python:3.11
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/ai_assets
+
+WORKDIR /app/ai_assets
+
+COPY requirements-worker.txt /tmp/requirements-worker.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-worker.txt
+
+COPY . /app/ai_assets
+
+CMD ["python", "-m", "ai_worker.consumer"]

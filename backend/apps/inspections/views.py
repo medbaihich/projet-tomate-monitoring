@@ -8,9 +8,11 @@ from rest_framework.response import Response
 
 from apps.core.api import apply_query_filters
 from apps.inspections.map_signals import build_dashboard_map_signals
-from apps.inspections.services import create_inspection_with_matches
+from apps.inspections.permissions import HasValidAIWorkerIngestionToken
+from apps.inspections.services import create_inspection_with_matches, ingest_ai_result_payload
 from apps.inspections.models import Inspection, InspectionMatch
 from apps.inspections.serializers import (
+    AIResultIngestionSerializer,
     InspectionCreateSerializer,
     InspectionMatchSerializer,
     InspectionSerializer,
@@ -32,6 +34,33 @@ class InspectionMapSignalsView(APIView):
             raise DRFValidationError(detail)
 
         return Response(data)
+
+
+class InspectionAIResultIngestionView(APIView):
+    authentication_classes = []
+    permission_classes = [HasValidAIWorkerIngestionToken]
+    http_method_names = ["post", "head", "options"]
+
+    def post(self, request, *args, **kwargs):
+        serializer = AIResultIngestionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            outcome = ingest_ai_result_payload(ai_result_data=serializer.validated_data)
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
+            raise DRFValidationError(detail)
+
+        response_status = status.HTTP_201_CREATED if outcome.created else status.HTTP_200_OK
+        return Response(
+            {
+                "created": outcome.created,
+                "duplicate": outcome.duplicate,
+                "inspection_id": str(outcome.inspection.id),
+                "source_message_id": outcome.inspection.source_message_id,
+            },
+            status=response_status,
+        )
 
 
 class InspectionViewSet(viewsets.ModelViewSet):

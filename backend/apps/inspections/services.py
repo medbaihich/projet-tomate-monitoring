@@ -1,5 +1,8 @@
+from dataclasses import dataclass
+from pathlib import Path
+
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils.text import slugify
 
 from apps.catalog.models import Disease, normalize_ai_label
@@ -7,6 +10,13 @@ from apps.devices.models import Device
 from apps.inference.models import InferenceIndex
 from apps.inspections.models import Inspection, InspectionMatch
 from apps.notifications.services import maybe_create_disease_alert_notification
+
+
+@dataclass(frozen=True, slots=True)
+class AIResultIngestionOutcome:
+    inspection: Inspection
+    created: bool
+    duplicate: bool
 
 
 def create_inspection_with_matches(*, inspection_data, matches_data=None):
@@ -151,3 +161,171 @@ def _normalize_match_data(matches_data):
         )
 
     return normalized
+
+
+def ingest_ai_result_payload(*, ai_result_data):
+    source_message_id = ai_result_data["source_message_id"]
+    existing_inspection = _get_existing_inspection_by_source_message_id(source_message_id)
+    if existing_inspection is not None:
+        return AIResultIngestionOutcome(
+            inspection=existing_inspection,
+            created=False,
+            duplicate=True,
+        )
+
+    device = _resolve_device_by_identifier(ai_result_data["device_identifier"])
+    organ_type = ai_result_data["organ_type"]
+    inference_index = _resolve_inference_index_for_ai_result(
+        organ_type=organ_type,
+        index_used=ai_result_data.get("index_used", ""),
+        metadata_used=ai_result_data.get("metadata_used", ""),
+    )
+
+    inspection_data = {
+        "device": device,
+        "inference_index": inference_index,
+        "organ_type": organ_type,
+        "status": Inspection.Status.NEW,
+        "processing_status": Inspection.ProcessingStatus.COMPLETED,
+        "source_message_id": source_message_id,
+        "top1_label": _resolve_ai_result_label(ai_result_data),
+        "confidence_score": ai_result_data.get("confidence_score"),
+        "captured_at": ai_result_data["captured_at"],
+        "received_at": ai_result_data["received_at"],
+        "processed_at": ai_result_data["processed_at"],
+        "extra_metadata": _build_ai_result_extra_metadata(ai_result_data),
+    }
+    matches_data = ai_result_data.get("matches", [])
+
+    try:
+        inspection = create_inspection_with_matches(
+            inspection_data=inspection_data,
+            matches_data=matches_data,
+        )
+    except IntegrityError as exc:
+        duplicate_inspection = _get_existing_inspection_by_source_message_id(source_message_id)
+        if duplicate_inspection is not None:
+            return AIResultIngestionOutcome(
+                inspection=duplicate_inspection,
+                created=False,
+                duplicate=True,
+            )
+        raise exc
+
+    return AIResultIngestionOutcome(
+        inspection=inspection,
+        created=True,
+        duplicate=False,
+    )
+
+
+def _get_existing_inspection_by_source_message_id(source_message_id):
+    if not source_message_id:
+        return None
+
+    return (
+        Inspection.objects.select_related(
+            "device",
+            "inference_index",
+            "predicted_disease",
+        )
+        .prefetch_related("matches__disease")
+        .filter(source_message_id=source_message_id)
+        .first()
+    )
+
+
+def _resolve_device_by_identifier(device_identifier):
+    device = Device.objects.filter(identifier=device_identifier).first()
+    if device is None:
+        raise ValidationError(
+            {
+                "device_identifier": (
+                    f"Device with identifier '{device_identifier}' does not exist."
+                )
+            }
+        )
+    return device
+
+
+def _resolve_inference_index_for_ai_result(*, organ_type, index_used, metadata_used):
+    queryset = InferenceIndex.objects.filter(organ_type=organ_type)
+    active_queryset = queryset.filter(is_active=True)
+    candidates = list(active_queryset) or list(queryset)
+
+    if not candidates:
+        raise ValidationError(
+            {
+                "organ_type": (
+                    f"No inference index is configured for organ_type '{organ_type}'."
+                )
+            }
+        )
+
+    normalized_index_used = _normalize_optional_name(index_used)
+    normalized_metadata_used = _normalize_optional_name(metadata_used)
+
+    for candidate in candidates:
+        candidate_name = candidate.name.strip().lower()
+        candidate_index_basename = Path(candidate.index_path or "").name.strip().lower()
+        candidate_metadata_basename = Path(candidate.metadata_path or "").name.strip().lower()
+
+        if normalized_index_used and normalized_index_used in {
+            candidate_name,
+            candidate_index_basename,
+        }:
+            return candidate
+
+        if normalized_metadata_used and normalized_metadata_used == candidate_metadata_basename:
+            return candidate
+
+    return candidates[0]
+
+
+def _normalize_optional_name(value):
+    if not value:
+        return ""
+    return str(value).strip().lower()
+
+
+def _resolve_ai_result_label(ai_result_data):
+    for key in ("final_label", "top1_label"):
+        value = (ai_result_data.get(key) or "").strip()
+        if value:
+            return value
+
+    matches = ai_result_data.get("matches", [])
+    if matches:
+        return str(matches[0].get("matched_label", "")).strip()
+
+    return ""
+
+
+def _build_ai_result_extra_metadata(ai_result_data):
+    worker_extra_metadata = ai_result_data.get("extra_metadata") or {}
+    return {
+        "ai_result": {
+            "schema_version": ai_result_data["schema_version"],
+            "message_type": ai_result_data["message_type"],
+            "source_schema_version": ai_result_data.get("source_schema_version", ""),
+            "feature_model": ai_result_data["feature_model"],
+            "feature_dim": ai_result_data["feature_dim"],
+            "l2_normalized": ai_result_data["l2_normalized"],
+            "declared_vector_norm": ai_result_data.get("declared_vector_norm"),
+            "input_vector_norm": ai_result_data.get("input_vector_norm"),
+            "normalized_vector_norm": ai_result_data.get("normalized_vector_norm"),
+            "organ_confidence": ai_result_data.get("organ_confidence"),
+            "organ_status": ai_result_data.get("organ_status", ""),
+            "top1_score": ai_result_data.get("top1_score"),
+            "confidence_score_kind": ai_result_data.get("confidence_score_kind", ""),
+            "majority_label": ai_result_data.get("majority_label", ""),
+            "final_label": ai_result_data.get("final_label", ""),
+            "index_used": ai_result_data.get("index_used", ""),
+            "metadata_used": ai_result_data.get("metadata_used", ""),
+            "worker_processing_status": ai_result_data.get("processing_status", ""),
+            "requires_review": bool(ai_result_data.get("requires_review", False)),
+            "warnings": list(ai_result_data.get("warnings", [])),
+            "skip_reasons": list(ai_result_data.get("skip_reasons", [])),
+        },
+        "worker_extra_metadata": worker_extra_metadata,
+    }

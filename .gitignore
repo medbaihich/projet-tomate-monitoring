@@ -89,6 +89,12 @@ ai_assets/**/outputs/
 ai_assets/**/runs/
 ai_assets/dataset_final
 *.md
+docs/
+docs/*.md
+ai_assets/docs/
+ai_assets/docs/*.md
+ai_assets/edge_runtime/
+ai_assets/edge_runtime/*.md
 *.png
 *.jpg
 *.jpeg  

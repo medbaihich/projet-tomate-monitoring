@@ -1,0 +1,33 @@
+from .vector_inference_service import (
+    DEFAULT_FRUIT_INDEX_PATH,
+    DEFAULT_FRUIT_METADATA_PATH,
+    DEFAULT_LEAF_INDEX_PATH,
+    DEFAULT_LEAF_METADATA_PATH,
+    DEFAULT_MIN_ORGAN_CLASSIFIER_PROBA,
+    DEFAULT_ORGAN_CLASSIFIER_LABELS,
+    DEFAULT_ORGAN_CLASSIFIER_PATH,
+    InferenceConfig,
+    REQUIRED_PAYLOAD_FIELDS,
+    prepare_feature_vector,
+    run_inference_from_payload,
+    run_inference_from_vector,
+    warm_up_inference_assets,
+    validate_payload,
+)
+
+__all__ = [
+    "DEFAULT_FRUIT_INDEX_PATH",
+    "DEFAULT_FRUIT_METADATA_PATH",
+    "DEFAULT_LEAF_INDEX_PATH",
+    "DEFAULT_LEAF_METADATA_PATH",
+    "DEFAULT_MIN_ORGAN_CLASSIFIER_PROBA",
+    "DEFAULT_ORGAN_CLASSIFIER_LABELS",
+    "DEFAULT_ORGAN_CLASSIFIER_PATH",
+    "InferenceConfig",
+    "REQUIRED_PAYLOAD_FIELDS",
+    "prepare_feature_vector",
+    "run_inference_from_payload",
+    "run_inference_from_vector",
+    "warm_up_inference_assets",
+    "validate_payload",
+]

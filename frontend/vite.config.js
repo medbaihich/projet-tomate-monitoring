@@ -23,8 +23,13 @@ export default defineConfig({
       'frontend',
     ],
     watch: {
-      usePolling: true,
-      interval: 100,
+      usePolling: process.env.VITE_USE_POLLING === 'true',
+      interval: Number(process.env.VITE_WATCH_INTERVAL || 1000),
+      ignored: [
+        '**/.git/**',
+        '**/dist/**',
+        '**/node_modules/**',
+      ],
     },
     hmr: {
       host: 'localhost',

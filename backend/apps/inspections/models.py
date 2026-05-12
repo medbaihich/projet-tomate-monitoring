@@ -63,6 +63,11 @@ class Inspection(UUIDPrimaryKeyModel, TimeStampedModel):
     class Meta:
         ordering = ("-captured_at", "-created_at")
         constraints = [
+            models.UniqueConstraint(
+                fields=("source_message_id",),
+                condition=~models.Q(source_message_id=""),
+                name="unique_inspection_source_message_id_when_present",
+            ),
             models.CheckConstraint(
                 condition=models.Q(confidence_score__isnull=True)
                 | (

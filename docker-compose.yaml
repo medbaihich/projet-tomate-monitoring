@@ -5,6 +5,7 @@ networks:
 
 volumes:
   postgres_data:
+  rabbitmq_data:
 
 services:
 
@@ -60,13 +61,80 @@ services:
     container_name: tomato_redis
     restart: unless-stopped
     networks:
-    - web
+      - web
+
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    container_name: tomato_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: tomato_mqtt
+      RABBITMQ_DEFAULT_PASS: tomato_mqtt_pass
+      RABBITMQ_DEFAULT_VHOST: /
+    command: >
+      sh -c "rabbitmq-plugins enable --offline rabbitmq_mqtt &&
+             rabbitmq-server"
+    ports:
+      - "5672:5672"
+      - "1883:1883"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - web
 
   # -----------------------------------------------------------
   # BACKEND — Django (port 8000)
   # Traefik routes: /api, /admin, and /static
   # Higher priority (10) so it wins before the frontend catch-all
   # -----------------------------------------------------------
+  # -----------------------------------------------------------
+  # AI WORKER - RabbitMQ AMQP Consumer for FAISS Inference
+  # Consumes MQTT-routed edge payloads from RabbitMQ through AMQP
+  # -----------------------------------------------------------
+  ai_worker:
+    build:
+      context: ./ai_assets
+      dockerfile: Dockerfile.worker
+    container_name: tomato_ai_worker
+    restart: unless-stopped
+    environment:
+      AI_WORKER_RABBITMQ_HOST: rabbitmq
+      AI_WORKER_RABBITMQ_PORT: "5672"
+      AI_WORKER_RABBITMQ_USERNAME: tomato_mqtt
+      AI_WORKER_RABBITMQ_PASSWORD: tomato_mqtt_pass
+      AI_WORKER_RABBITMQ_VHOST: /
+      AI_WORKER_REQUEST_EXCHANGE: amq.topic
+      AI_WORKER_REQUEST_QUEUE: tomato.ai.inference.requests.v1
+      AI_WORKER_REQUEST_BINDING_KEY: tomato.edge.v1.*.feature-vector
+      AI_WORKER_DEAD_LETTER_EXCHANGE: tomato.ai.inference.deadletter
+      AI_WORKER_DEAD_LETTER_QUEUE: tomato.ai.inference.deadletter.v1
+      AI_WORKER_DEAD_LETTER_ROUTING_KEY: tomato.ai.inference.deadletter.v1
+      AI_WORKER_PREFETCH_COUNT: "1"
+      AI_WORKER_LOG_LEVEL: INFO
+      AI_WORKER_RESULT_SINK: backend_http
+      AI_WORKER_BACKEND_INGESTION_URL: http://backend:8000/api/v1/inspections/ingest-ai-result/
+      AI_WORKER_BACKEND_INGESTION_TOKEN: tomato-ai-worker-dev-token
+      AI_WORKER_BACKEND_TIMEOUT_SECONDS: "10"
+      AI_WORKER_BACKEND_MAX_ATTEMPTS: "3"
+      AI_WORKER_BACKEND_RETRY_DELAY_SECONDS: "2"
+      AI_WORKER_ASSETS_DIR: /app/ai_assets
+      AI_WORKER_TOP_K_DISEASE: "5"
+      AI_WORKER_MIN_ORGAN_CLASSIFIER_PROBA: "0.70"
+    depends_on:
+      backend:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    command: ["python", "-m", "ai_worker.consumer"]
+    networks:
+      - web
+
   backend:
     build:
       context: ./backend
@@ -84,6 +152,7 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
+      AI_WORKER_INGESTION_TOKEN: tomato-ai-worker-dev-token
     volumes:
       - ./ai_assets:/app/ai_assets
     depends_on:
@@ -136,14 +205,14 @@ services:
     container_name: tomato_frontend
     restart: unless-stopped
     environment:
-      CHOKIDAR_USEPOLLING: "true"
-      WATCHPACK_POLLING: "true"
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
+      NODE_OPTIONS: --max-old-space-size=4096
+      VITE_USE_POLLING: "false"
+      VITE_WATCH_INTERVAL: "1000"
+    command: >
+      sh -c "npm run build &&
+             npm run preview -- --host 0.0.0.0 --port 3000"
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     networks:
       - web
     labels:

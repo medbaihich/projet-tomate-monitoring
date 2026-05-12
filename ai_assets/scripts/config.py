@@ -118,6 +118,7 @@ LEAF_EMBEDDINGS_NPY = EMBEDDINGS_DIR / "leaf_embeddings.npy"
 
 FRUIT_METADATA_CSV = METADATA_DIR / "fruit_metadata.csv"
 LEAF_METADATA_CSV = METADATA_DIR / "leaf_metadata.csv"
+ORGAN_METADATA_CSV = METADATA_DIR / "organ_metadata.csv"
 
 IMAGE_SIZE = (224, 224)
 BATCH_SIZE = 32
@@ -126,3 +127,4 @@ INDEXES_DIR = PROJECT_ROOT / "indexes"
 
 FRUIT_FAISS_INDEX = INDEXES_DIR / "fruit_faiss.index"
 LEAF_FAISS_INDEX = INDEXES_DIR / "leaf_faiss.index"
+ORGAN_FAISS_INDEX = INDEXES_DIR / "organ_faiss.index"

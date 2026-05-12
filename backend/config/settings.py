@@ -135,3 +135,8 @@ CHANNEL_LAYERS = {
         },
     }
 }
+
+AI_WORKER_INGESTION_TOKEN = env(
+    "AI_WORKER_INGESTION_TOKEN",
+    "tomato-ai-worker-dev-token",
+)
