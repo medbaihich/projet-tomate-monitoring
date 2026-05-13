@@ -472,9 +472,7 @@ export default function MonitoringPage() {
   return (
     <Stack spacing={1.75}>
       <PageHeader
-        eyebrow="Administration"
         title="Monitoring"
-        subtitle="Central visibility into notification volume, reader activity, and current user presence across the operational workspace."
       />
 
       <Grid container spacing={1.25} alignItems="stretch">

@@ -21,14 +21,19 @@ import {
 } from '@/features/inspections/api';
 import ReviewWorkspaceList from '@/features/review/ReviewWorkspaceList';
 import ReviewDetailPanel from '@/features/review/ReviewDetailPanel';
+import ReviewedHistoryTable from '@/features/review/ReviewedHistoryTable';
+import ReviewHistoryDrawer from '@/features/review/ReviewHistoryDrawer';
 import { fetchReviewWorkspace, REVIEW_WORKSPACE_QUERY_KEY, submitReview } from '@/features/review/api';
 import { isInspectionReviewable } from '@/features/review/utils';
+import { useThemeMode } from '@/theme-mode-context';
 
 function buildMap(items) {
   return new Map(items.map((item) => [item.id, item]));
 }
 
 export default function ReviewPage() {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
   const queryClient = useQueryClient();
   const location = useLocation();
   const [activeView, setActiveView] = useState('pending');
@@ -86,16 +91,9 @@ export default function ReviewPage() {
     [inspectionMap, reviews],
   );
 
-  const activeHistoryReviewId = useMemo(() => {
-    if (selectedHistoryReviewId && reviewHistoryItems.some((item) => item.review.id === selectedHistoryReviewId)) {
-      return selectedHistoryReviewId;
-    }
-
-    return reviewHistoryItems[0]?.review.id ?? null;
-  }, [reviewHistoryItems, selectedHistoryReviewId]);
   const selectedHistoryItem = useMemo(
-    () => reviewHistoryItems.find((item) => item.review.id === activeHistoryReviewId) ?? null,
-    [activeHistoryReviewId, reviewHistoryItems],
+    () => reviewHistoryItems.find((item) => item.review.id === selectedHistoryReviewId) ?? null,
+    [reviewHistoryItems, selectedHistoryReviewId],
   );
   const requestedFocusInspectionId = location.state?.focusInspectionId ?? null;
   const selectedInspection = useMemo(
@@ -166,6 +164,9 @@ export default function ReviewPage() {
   const handleSelectHistoryItem = (item) => {
     setSelectedHistoryReviewId(item.review.id);
   };
+  const handleCloseHistoryDrawer = () => {
+    setSelectedHistoryReviewId(null);
+  };
 
   if (workspaceQuery.isLoading || referenceQuery.isLoading) {
     return (
@@ -206,12 +207,22 @@ export default function ReviewPage() {
     <>
       <Stack spacing={1.75}>
         <PageHeader
-          eyebrow="Quality Control"
           title="Review"
-          subtitle="Review low-confidence inspection predictions and revisit previously submitted review decisions."
         />
 
-        <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Box
+          sx={isLightMode
+            ? {
+                border: '1px solid',
+                borderColor: 'rgba(214,224,215,0.95)',
+                bgcolor: 'rgba(255,255,255,0.76)',
+                borderRadius: 2,
+                px: 0.75,
+                py: 0.35,
+                boxShadow: '0 10px 24px rgba(15,23,42,0.04)',
+              }
+            : { borderBottom: '1px solid', borderColor: 'divider' }}
+        >
           <Tabs
             value={activeView}
             onChange={(_event, nextValue) => setActiveView(nextValue)}
@@ -223,9 +234,9 @@ export default function ReviewPage() {
           </Tabs>
         </Box>
 
-        <Grid container spacing={1.75}>
-          <Grid size={{ xs: 12, lg: 5 }}>
-            {activeView === 'pending' ? (
+        {activeView === 'pending' ? (
+          <Grid container spacing={1.75}>
+            <Grid size={{ xs: 12, lg: 5 }}>
               <ReviewWorkspaceList
                 mode="pending"
                 items={reviewableInspections}
@@ -236,22 +247,9 @@ export default function ReviewPage() {
                 emptyTitle="No low-confidence inspections waiting for review"
                 emptyMessage="All currently fetched low-confidence inspections are already reviewed, or no inspections currently meet the confidence <= 0.5 review rule."
               />
-            ) : (
-              <ReviewWorkspaceList
-                mode="history"
-                items={reviewHistoryItems}
-                selectedItemId={activeHistoryReviewId}
-                onSelectItem={handleSelectHistoryItem}
-                diseaseMap={diseaseMap}
-                deviceMap={deviceMap}
-                emptyTitle="No reviewed history yet"
-                emptyMessage="No review records have been returned by the backend yet."
-              />
-            )}
-          </Grid>
+            </Grid>
 
-          <Grid size={{ xs: 12, lg: 7 }}>
-            {activeView === 'pending' ? (
+            <Grid size={{ xs: 12, lg: 7 }}>
               <ReviewDetailPanel
                 key={`pending-${panelInspection?.id ?? 'empty-review-panel'}`}
                 mode="pending"
@@ -263,23 +261,32 @@ export default function ReviewPage() {
                 submitError={submitMutation.error}
                 isSubmittedState={isSubmittedInspectionVisible}
               />
-            ) : (
-              <ReviewDetailPanel
-                key={`history-${selectedHistoryItem?.review.id ?? 'empty-history-panel'}`}
-                mode="history"
-                inspection={selectedHistoryItem?.inspection ?? null}
-                review={selectedHistoryItem?.review ?? null}
-                diseaseMap={diseaseMap}
-                deviceMap={deviceMap}
-                diseases={diseases}
-                submitMutation={submitMutation}
-                submitError={null}
-                isSubmittedState={false}
-              />
-            )}
+            </Grid>
           </Grid>
-        </Grid>
+        ) : (
+          <ReviewedHistoryTable
+            items={reviewHistoryItems}
+            isLoading={workspaceQuery.isLoading}
+            isFetching={workspaceQuery.isFetching || referenceQuery.isFetching}
+            selectedReviewId={selectedHistoryReviewId}
+            diseaseMap={diseaseMap}
+            deviceMap={deviceMap}
+            onSelectItem={handleSelectHistoryItem}
+            onRefresh={() => {
+              workspaceQuery.refetch();
+              referenceQuery.refetch();
+            }}
+          />
+        )}
       </Stack>
+
+      <ReviewHistoryDrawer
+        open={activeView === 'history' && Boolean(selectedHistoryItem)}
+        onClose={handleCloseHistoryDrawer}
+        item={selectedHistoryItem}
+        diseaseMap={diseaseMap}
+        deviceMap={deviceMap}
+      />
 
       <Snackbar
         open={successOpen}

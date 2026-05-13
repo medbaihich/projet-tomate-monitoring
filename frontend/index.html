@@ -12,6 +12,22 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      (() => {
+        const storageKey = 'smart-eye-theme-mode';
+        const validModes = ['dark', 'light'];
+
+        try {
+          const storedMode = window.localStorage.getItem(storageKey);
+          const resolvedMode = validModes.includes(storedMode) ? storedMode : 'dark';
+          document.documentElement.dataset.theme = resolvedMode;
+          document.documentElement.style.colorScheme = resolvedMode;
+        } catch {
+          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.style.colorScheme = 'dark';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

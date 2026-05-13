@@ -16,8 +16,11 @@ import {
 import axiosClient from '@/api/axiosClient';
 import azuraLogo from '@/assets/branding/azura_logo.png';
 import useAuthStore from '@/store/authStore';
+import { useThemeMode } from '@/theme-mode-context';
 
 export default function Login() {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -77,8 +80,10 @@ export default function Login() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        bgcolor: '#F6FAF6',
-        backgroundImage: 'linear-gradient(180deg, rgba(31, 106, 61, 0.04) 0%, rgba(255, 255, 255, 0) 26%)',
+        bgcolor: isLightMode ? '#F6FAF6' : '#0b1210',
+        backgroundImage: isLightMode
+          ? 'linear-gradient(180deg, rgba(31, 106, 61, 0.04) 0%, rgba(255, 255, 255, 0) 26%)'
+          : 'radial-gradient(circle at top left, rgba(74, 222, 128, 0.08), transparent 28%)',
       }}
     >
       <Card
@@ -88,8 +93,10 @@ export default function Login() {
           overflow: 'hidden',
           borderRadius: 1.5,
           border: '1px solid',
-          borderColor: 'divider',
-          boxShadow: '0 18px 42px rgba(18, 75, 47, 0.08)',
+          borderColor: isLightMode ? 'divider' : 'rgba(37, 49, 44, 0.96)',
+          boxShadow: isLightMode
+            ? '0 18px 42px rgba(18, 75, 47, 0.08)'
+            : '0 24px 54px rgba(0, 0, 0, 0.34)',
         }}
       >
         <Grid container>

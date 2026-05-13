@@ -4,7 +4,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { Eye, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { useThemeMode } from '@/theme-mode-context';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const FILTER_SELECT_CLASS = 'h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
@@ -100,7 +101,18 @@ export default function DevicesTable({
   onSelectDevice,
   onRefresh,
 }) {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  const toolbarClassName = isLightMode
+    ? 'rounded-xl border border-slate-200 bg-white/72 p-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
+    : '';
+  const tableShellClassName = isLightMode
+    ? 'rounded-xl border border-slate-200 bg-white/84 shadow-[0_14px_30px_rgba(15,23,42,0.05)]'
+    : 'rounded-md border border-border bg-card';
+  const footerClassName = isLightMode
+    ? 'rounded-xl border border-slate-200 bg-white/72 px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
+    : '';
   const columns = useMemo(
     () => [
       {
@@ -165,28 +177,8 @@ export default function DevicesTable({
           </span>
         ),
       },
-      {
-        id: 'actions',
-        enableSorting: false,
-        header: 'Actions',
-        cell: ({ row }) => (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={(event) => {
-              event.stopPropagation();
-              onSelectDevice(row.original);
-            }}
-          >
-            <Eye className="h-4 w-4" aria-hidden="true" />
-            View
-          </Button>
-        ),
-      },
     ],
-    [onSelectDevice],
+    [],
   );
   // TanStack Table intentionally returns non-memoizable helpers.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -210,7 +202,7 @@ export default function DevicesTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between">
+      <div className={cn('flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between', toolbarClassName)}>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(16rem,1.2fr)_repeat(4,minmax(9rem,12rem))]">
           <Input
             value={search}
@@ -284,13 +276,16 @@ export default function DevicesTable({
       {isLoading ? (
         <DevicesTableSkeleton />
       ) : (
-        <div className="rounded-md border border-border bg-card">
+        <div className={tableShellClassName}>
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="hover:bg-transparent">
                   {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="h-10 whitespace-nowrap px-3">
+                    <TableHead
+                      key={header.id}
+                      className={cn('h-10 whitespace-nowrap px-3', isLightMode && 'bg-slate-50/80 text-slate-600')}
+                    >
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
@@ -305,8 +300,20 @@ export default function DevicesTable({
                   <TableRow
                     key={row.id}
                     data-state={selectedDeviceId === row.original.id ? 'selected' : undefined}
-                    className="cursor-pointer"
+                    className={cn(
+                      'cursor-pointer transition-colors',
+                      isLightMode
+                        ? 'hover:bg-emerald-50/55 focus-visible:bg-emerald-50/55 data-[state=selected]:bg-emerald-50/80'
+                        : 'hover:bg-muted/40 focus-visible:bg-muted/40',
+                    )}
                     onClick={() => onSelectDevice(row.original)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onSelectDevice(row.original);
+                      }
+                    }}
+                    tabIndex={0}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id} className="px-3 py-2.5">
@@ -327,7 +334,7 @@ export default function DevicesTable({
         </div>
       )}
 
-      <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+      <div className={cn('flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between', footerClassName)}>
         <span>
           Showing {firstRow}-{lastRow} of {totalCount}
         </span>

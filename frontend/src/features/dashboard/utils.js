@@ -47,10 +47,10 @@ export function calculateAverageConfidence(inspections) {
 
 export function buildConfidenceDistribution(inspections) {
   const ranges = [
-    { label: '<= 0.50', key: 'reviewable', color: '#ffa726', predicate: (value) => value <= 0.5, count: 0 },
-    { label: '0.51-0.69', key: 'watch', color: '#42a5f5', predicate: (value) => value > 0.5 && value < 0.7, count: 0 },
-    { label: '0.70-0.84', key: 'strong', color: '#66bb6a', predicate: (value) => value >= 0.7 && value < 0.85, count: 0 },
-    { label: '0.85-1.00', key: 'high', color: '#2e7d32', predicate: (value) => value >= 0.85 && value <= 1, count: 0 },
+    { label: '≤ 50%', key: 'reviewable', color: '#ffa726', predicate: (value) => value <= 0.5, count: 0 },
+    { label: '51-69%', key: 'watch', color: '#42a5f5', predicate: (value) => value > 0.5 && value < 0.7, count: 0 },
+    { label: '70-84%', key: 'strong', color: '#66bb6a', predicate: (value) => value >= 0.7 && value < 0.85, count: 0 },
+    { label: '≥ 85%', key: 'high', color: '#2e7d32', predicate: (value) => value >= 0.85 && value <= 1, count: 0 },
   ];
 
   inspections.forEach((inspection) => {

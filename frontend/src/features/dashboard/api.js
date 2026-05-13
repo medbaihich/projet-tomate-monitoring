@@ -251,6 +251,7 @@ export async function fetchDashboardData() {
   return {
     summary,
     allInspections,
+    allReviews,
     recentInspections,
     pendingReviewQueue,
     highlights: buildHighlights(summary),

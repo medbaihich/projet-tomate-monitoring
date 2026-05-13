@@ -793,6 +793,53 @@ class InspectionMapSignalsApiTests(APITestCase):
         self.assertEqual(signal["disease_name"], "Late Blight")
         self.assertEqual(signal["label"], "Late Blight")
 
+    def test_latest_per_device_returns_only_the_most_recent_signal_for_each_device(self):
+        newest_signal = self._create_inspection(
+            device=self.mapped_device,
+            disease=self.late_blight,
+            label="Late Blight",
+            confidence_score=0.95,
+            captured_offset=timedelta(minutes=30),
+            source_message_id="mapped-device-newest-late-blight",
+        )
+
+        default_response = self.client.get(reverse("inspection-map-signals"))
+        latest_per_device_response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"latest_per_device": "true"},
+        )
+
+        self.assertEqual(default_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(latest_per_device_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(default_response.data["summary"]["total_signals"], 6)
+        self.assertEqual(latest_per_device_response.data["summary"]["total_signals"], 4)
+        self.assertEqual(latest_per_device_response.data["summary"]["mapped_signals"], 3)
+        self.assertEqual(latest_per_device_response.data["summary"]["unmapped_signals"], 1)
+
+        latest_signals = latest_per_device_response.data["signals"]
+        mapped_device_signals = [
+            signal for signal in latest_signals
+            if signal["device_id"] == str(self.mapped_device.id)
+        ]
+        self.assertEqual(len(mapped_device_signals), 1)
+        self.assertEqual(mapped_device_signals[0]["inspection_id"], str(newest_signal.id))
+        self.assertEqual(mapped_device_signals[0]["disease_key"], "late_blight")
+
+        latest_zone_keys = {
+            (zone["line_name"], zone["disease_key"])
+            for zone in latest_per_device_response.data["infection_zones"]
+        }
+        self.assertIn((self.line.name, "late_blight"), latest_zone_keys)
+
+    def test_latest_per_device_rejects_invalid_boolean_value(self):
+        response = self.client.get(
+            reverse("inspection-map-signals"),
+            {"latest_per_device": "sometimes"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("latest_per_device", response.data)
+
 
 class InspectionDiseaseResolutionTests(TestCase):
     @classmethod

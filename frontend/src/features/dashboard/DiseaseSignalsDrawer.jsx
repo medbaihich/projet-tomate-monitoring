@@ -1,12 +1,14 @@
-import { Box, Chip, IconButton, Portal, Stack, Typography } from '@mui/material'
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import { AlertTriangle, BellRing, ShieldAlert } from 'lucide-react'
+import { Box, Chip, Portal, Stack, Typography } from '@mui/material'
+import { AlertTriangle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import DrawerCloseButton from '@/components/ui/DrawerCloseButton'
 import {
   formatConfidencePercentage,
   resolveNotificationAlertTimestamp,
   resolveNotificationRiskLevel,
 } from '@/features/dashboard/utils'
+import { cn } from '@/lib/utils'
+import { useThemeMode } from '@/theme-mode-context'
 
 function formatDiseaseLabel(value) {
   const trimmed = (value || '').trim()
@@ -71,30 +73,42 @@ function resolveRiskBadgeClasses(riskLevel) {
   return 'border-slate-300/18 bg-white/[0.05] text-slate-200'
 }
 
-function AlertQueueItem({ notification, diseases, onSelect }) {
+function AlertQueueItem({ notification, diseases, onSelect, isLightMode }) {
   const riskLevel = resolveNotificationRiskLevel(notification, diseases)
   const isUnread = !notification.is_read
   const diseaseLabel = formatDiseaseLabel(notification.display_disease_label || notification.title)
-  const itemClasses = isUnread
-    ? 'border-red-300/34 bg-[linear-gradient(180deg,rgba(127,29,29,0.92),rgba(56,13,13,0.96))] shadow-[0_16px_34px_rgba(127,29,29,0.24)] hover:border-red-200/44 hover:bg-[linear-gradient(180deg,rgba(153,27,27,0.94),rgba(68,14,14,0.98))]'
-    : 'border-white/14 bg-[linear-gradient(180deg,rgba(19,28,27,0.98),rgba(10,16,15,0.99))] shadow-[0_14px_28px_rgba(0,0,0,0.22)] hover:border-red-300/26 hover:bg-[linear-gradient(180deg,rgba(24,34,33,0.98),rgba(12,18,17,0.99))]'
-  const readStateBadgeClasses = isUnread
-    ? 'border-red-300/30 bg-red-500/14 text-red-100'
-    : 'border-red-300/24 bg-red-500/10 text-red-200'
-  const messageClasses = isUnread ? 'text-red-100/78' : 'text-slate-300'
-  const metaClasses = isUnread ? 'text-red-100/72' : 'text-slate-400'
+  const itemClasses = isLightMode
+    ? (isUnread
+      ? 'border-red-200 bg-[linear-gradient(180deg,rgba(254,242,242,0.98),rgba(255,255,255,0.98))] shadow-[0_10px_24px_rgba(127,29,29,0.08)] hover:border-red-300 hover:bg-[linear-gradient(180deg,rgba(254,226,226,0.98),rgba(255,255,255,0.98))]'
+      : 'border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] shadow-[0_10px_24px_rgba(15,23,42,0.05)] hover:border-red-200 hover:bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(254,242,242,0.98))]')
+    : (isUnread
+      ? 'border-red-300/34 bg-[linear-gradient(180deg,rgba(127,29,29,0.92),rgba(56,13,13,0.96))] shadow-[0_16px_34px_rgba(127,29,29,0.24)] hover:border-red-200/44 hover:bg-[linear-gradient(180deg,rgba(153,27,27,0.94),rgba(68,14,14,0.98))]'
+      : 'border-white/14 bg-[linear-gradient(180deg,rgba(19,28,27,0.98),rgba(10,16,15,0.99))] shadow-[0_14px_28px_rgba(0,0,0,0.22)] hover:border-red-300/26 hover:bg-[linear-gradient(180deg,rgba(24,34,33,0.98),rgba(12,18,17,0.99))]')
+  const readStateBadgeClasses = isLightMode
+    ? (isUnread ? 'border-red-300/60 bg-red-50 text-red-700' : 'border-slate-300 bg-slate-100 text-slate-600')
+    : (isUnread ? 'border-red-300/30 bg-red-500/14 text-red-100' : 'border-red-300/24 bg-red-500/10 text-red-200')
+  const messageClasses = isLightMode
+    ? (isUnread ? 'text-red-800/85' : 'text-slate-600')
+    : (isUnread ? 'text-red-100/78' : 'text-slate-300')
+  const metaClasses = isLightMode
+    ? (isUnread ? 'text-red-700/72' : 'text-slate-500')
+    : (isUnread ? 'text-red-100/72' : 'text-slate-400')
 
   return (
     <button
       type="button"
       onClick={() => onSelect(notification)}
-      className={`relative w-full overflow-hidden rounded-2xl border px-4 py-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${itemClasses}`}
+      className={cn(
+        'relative w-full overflow-hidden rounded-2xl border px-4 py-3 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+        isLightMode ? 'focus-visible:ring-red-400/70 focus-visible:ring-offset-white' : 'focus-visible:ring-red-300/80 focus-visible:ring-offset-slate-950',
+        itemClasses,
+      )}
     >
-      <div className={`pointer-events-none absolute inset-x-0 top-0 h-1 ${isUnread ? 'bg-red-300/90' : 'bg-red-400/72'}`} />
+      <div className={cn('pointer-events-none absolute inset-x-0 top-0 h-1', isLightMode ? (isUnread ? 'bg-red-400/70' : 'bg-red-300/55') : (isUnread ? 'bg-red-300/90' : 'bg-red-400/72'))} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <p className="truncate text-sm font-semibold text-slate-50">{diseaseLabel}</p>
-          <p className={`line-clamp-1 text-xs leading-5 ${isUnread ? 'text-red-50/88' : 'text-slate-300'}`}>
+          <p className={cn('truncate text-sm font-semibold', isLightMode ? 'text-slate-900' : 'text-slate-50')}>{diseaseLabel}</p>
+          <p className={cn('line-clamp-1 text-xs leading-5', isLightMode ? 'text-slate-600' : (isUnread ? 'text-red-50/88' : 'text-slate-300'))}>
             {resolveDeviceLabel(notification)}
           </p>
         </div>
@@ -134,6 +148,8 @@ export default function DiseaseSignalsDrawer({
   diseases,
   onSelectNotification,
 }) {
+  const { mode } = useThemeMode()
+  const isLightMode = mode === 'light'
   const count = notifications.length
   const newestFirstNotifications = [...notifications].sort((left, right) => (
     resolveNotificationAlertTimestamp(right).localeCompare(resolveNotificationAlertTimestamp(left))
@@ -155,7 +171,7 @@ export default function DiseaseSignalsDrawer({
           sx={{
             position: 'absolute',
             inset: 0,
-            bgcolor: 'rgba(2, 6, 23, 0.18)',
+            bgcolor: isLightMode ? 'rgba(15,23,42,0.12)' : 'rgba(2, 6, 23, 0.18)',
           }}
         />
 
@@ -175,9 +191,9 @@ export default function DiseaseSignalsDrawer({
             maxHeight: '100dvh',
             display: 'flex',
             flexDirection: 'column',
-            bgcolor: '#07110F',
-            borderLeft: '1px solid rgba(148, 163, 184, 0.2)',
-            boxShadow: '0 20px 54px rgba(0, 0, 0, 0.34)',
+            bgcolor: isLightMode ? '#f8fbf8' : '#07110F',
+            borderLeft: isLightMode ? '1px solid rgba(203,213,225,0.95)' : '1px solid rgba(148, 163, 184, 0.2)',
+            boxShadow: isLightMode ? '0 18px 44px rgba(15,23,42,0.16)' : '0 20px 54px rgba(0, 0, 0, 0.34)',
             overflow: 'hidden',
             pointerEvents: 'auto',
             transform: open ? 'translateX(0)' : 'translateX(100%)',
@@ -189,8 +205,10 @@ export default function DiseaseSignalsDrawer({
             sx={{
               px: { xs: 1.5, sm: 1.75 },
               py: { xs: 1.15, sm: 1.35 },
-              background: 'linear-gradient(160deg, rgba(220, 38, 38, 0.24), rgba(6, 15, 13, 0.98))',
-              borderBottom: '1px solid rgba(148, 163, 184, 0.16)',
+              background: isLightMode
+                ? 'linear-gradient(160deg, rgba(254,226,226,0.94), rgba(255,255,255,0.98))'
+                : 'linear-gradient(160deg, rgba(220, 38, 38, 0.24), rgba(6, 15, 13, 0.98))',
+              borderBottom: isLightMode ? '1px solid rgba(226,232,240,0.92)' : '1px solid rgba(148, 163, 184, 0.16)',
               flexShrink: 0,
             }}
           >
@@ -199,51 +217,45 @@ export default function DiseaseSignalsDrawer({
                 <Stack spacing={0.45} sx={{ minWidth: 0 }}>
                   <Typography
                     variant="overline"
-                    sx={{ color: '#FECACA', lineHeight: 1.1, letterSpacing: 1.4 }}
+                    sx={{ color: isLightMode ? '#b91c1c' : '#FECACA', lineHeight: 1.1, letterSpacing: 1.4 }}
                   >
                     Disease alerts
                   </Typography>
                   <Typography
                     variant="h5"
                     sx={{
-                      color: '#F8FAFC',
+                      color: isLightMode ? '#0f172a' : '#F8FAFC',
                       fontWeight: 850,
                       letterSpacing: '-0.03em',
                     }}
                   >
                     Disease Signals
                   </Typography>
-                  <Typography variant="body2" sx={{ color: 'rgba(203, 213, 225, 0.78)' }}>
+                  <Typography variant="body2" sx={{ color: isLightMode ? '#64748b' : 'rgba(203, 213, 225, 0.78)' }}>
                     Current dashboard disease alerts ordered by unread status, risk, and recency.
                   </Typography>
                 </Stack>
-                <IconButton
+                <DrawerCloseButton
                   onClick={onClose}
                   aria-label="Close disease signals"
-                  sx={{
-                    color: '#E2E8F0',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    bgcolor: 'rgba(255, 255, 255, 0.04)',
-                    '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.08)',
-                    },
-                  }}
-                >
-                  <CloseRoundedIcon />
-                </IconButton>
+                />
               </Stack>
 
               <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
                 <Chip
                   size="small"
                   label={`${count} alert${count === 1 ? '' : 's'}`}
-                  sx={{ borderColor: 'rgba(248, 113, 113, 0.28)', color: '#FECACA' }}
+                  sx={isLightMode
+                    ? { borderColor: 'rgba(248,113,113,0.28)', bgcolor: 'rgba(254,242,242,0.92)', color: '#b91c1c' }
+                    : { borderColor: 'rgba(248, 113, 113, 0.28)', color: '#FECACA' }}
                   variant="outlined"
                 />
                 <Chip
                   size="small"
                   label={`${notifications.filter((notification) => !notification.is_read).length} unread`}
-                  sx={{ borderColor: 'rgba(148, 163, 184, 0.28)', color: '#CBD5E1' }}
+                  sx={isLightMode
+                    ? { borderColor: 'rgba(203,213,225,0.95)', bgcolor: 'rgba(255,255,255,0.82)', color: '#475569' }
+                    : { borderColor: 'rgba(148, 163, 184, 0.28)', color: '#CBD5E1' }}
                   variant="outlined"
                 />
               </Stack>
@@ -256,7 +268,7 @@ export default function DiseaseSignalsDrawer({
               minHeight: 0,
               overflowY: 'auto',
               p: { xs: 1.25, sm: 1.5 },
-              bgcolor: '#050A09',
+              bgcolor: isLightMode ? '#f1f6f2' : '#050A09',
             }}
           >
             <div className="space-y-3">
@@ -266,29 +278,9 @@ export default function DiseaseSignalsDrawer({
                   notification={notification}
                   diseases={diseases}
                   onSelect={onSelectNotification}
+                  isLightMode={isLightMode}
                 />
               ))}
-            </div>
-          </Box>
-
-          <Box
-            sx={{
-              borderTop: '1px solid rgba(148, 163, 184, 0.12)',
-              px: 2,
-              py: 1.25,
-              bgcolor: '#050A09',
-              flexShrink: 0,
-            }}
-          >
-            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1.5">
-                <BellRing className="h-3.5 w-3.5 text-red-300" />
-                Selecting an alert opens the existing disease alert detail drawer.
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <ShieldAlert className="h-3.5 w-3.5 text-slate-400" />
-                Risk labels prefer DB-backed disease map profiles and fall back to notification severity.
-              </span>
             </div>
           </Box>
         </Box>

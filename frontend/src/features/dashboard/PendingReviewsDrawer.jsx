@@ -1,10 +1,11 @@
-import { Box, Chip, IconButton, Portal, Stack, Typography } from '@mui/material'
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import { AlertTriangle, ClipboardCheck, Clock3 } from 'lucide-react'
+import { Box, Chip, Portal, Stack, Typography } from '@mui/material'
+import { ClipboardCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import DrawerCloseButton from '@/components/ui/DrawerCloseButton'
 import { cn } from '@/lib/utils'
 import { formatConfidencePercentage } from '@/features/dashboard/utils'
 import { formatReviewDateTime } from '@/features/review/utils'
+import { useThemeMode } from '@/theme-mode-context'
 
 function formatDiseaseLabel(value) {
   const trimmed = (value || '').trim()
@@ -28,31 +29,41 @@ function formatOrganLabel(value) {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-function ReviewQueueItem({ inspection, onSelect }) {
+function ReviewQueueItem({ inspection, onSelect, isLightMode }) {
   return (
     <button
       type="button"
       onClick={() => onSelect(inspection)}
-      className="w-full rounded-2xl border border-amber-300/20 bg-amber-400/[0.08] px-4 py-3 text-left transition-colors hover:bg-amber-400/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+      className={cn(
+        'w-full rounded-2xl border px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+        isLightMode
+          ? 'border-amber-300/45 bg-amber-50 hover:bg-amber-100/80 focus-visible:ring-amber-400/70 focus-visible:ring-offset-white'
+          : 'border-amber-300/20 bg-amber-400/[0.08] hover:bg-amber-400/[0.14] focus-visible:ring-amber-300/80 focus-visible:ring-offset-slate-950',
+      )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <p className="truncate text-sm font-semibold text-slate-50">
+          <p className={cn('truncate text-sm font-semibold', isLightMode ? 'text-slate-900' : 'text-slate-50')}>
             {formatDiseaseLabel(inspection.top1_label)}
           </p>
-          <p className="line-clamp-1 text-xs leading-5 text-slate-300">
+          <p className={cn('line-clamp-1 text-xs leading-5', isLightMode ? 'text-slate-600' : 'text-slate-300')}>
             {inspection.device_label || 'Unknown device'}
           </p>
         </div>
         <Badge
           variant="outline"
-          className="shrink-0 rounded-full border-amber-300/30 bg-amber-400/14 px-2 py-0.5 text-[0.62rem] font-semibold text-amber-100"
+          className={cn(
+            'shrink-0 rounded-full px-2 py-0.5 text-[0.62rem] font-semibold',
+            isLightMode
+              ? 'border-amber-300/60 bg-amber-100 text-amber-800'
+              : 'border-amber-300/30 bg-amber-400/14 text-amber-100',
+          )}
         >
           Review Required
         </Badge>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-[0.7rem] font-medium text-slate-400">
+      <div className={cn('mt-3 flex flex-wrap items-center gap-2 text-[0.7rem] font-medium', isLightMode ? 'text-slate-500' : 'text-slate-400')}>
         <span>{formatConfidencePercentage(inspection.confidence_score)}</span>
         <span>{formatOrganLabel(inspection.organ_type)}</span>
         <span>{formatReviewDateTime(inspection.captured_at)}</span>
@@ -67,6 +78,8 @@ export default function PendingReviewsDrawer({
   inspections,
   onSelectInspection,
 }) {
+  const { mode } = useThemeMode()
+  const isLightMode = mode === 'light'
   const count = inspections.length
 
   return (
@@ -85,7 +98,7 @@ export default function PendingReviewsDrawer({
           sx={{
             position: 'absolute',
             inset: 0,
-            bgcolor: 'rgba(2, 6, 23, 0.18)',
+            bgcolor: isLightMode ? 'rgba(15,23,42,0.12)' : 'rgba(2, 6, 23, 0.18)',
           }}
         />
 
@@ -105,9 +118,9 @@ export default function PendingReviewsDrawer({
             maxHeight: '100dvh',
             display: 'flex',
             flexDirection: 'column',
-            bgcolor: '#07110F',
-            borderLeft: '1px solid rgba(148, 163, 184, 0.2)',
-            boxShadow: '0 20px 54px rgba(0, 0, 0, 0.34)',
+            bgcolor: isLightMode ? '#f8fbf8' : '#07110F',
+            borderLeft: isLightMode ? '1px solid rgba(203,213,225,0.95)' : '1px solid rgba(148, 163, 184, 0.2)',
+            boxShadow: isLightMode ? '0 18px 44px rgba(15,23,42,0.16)' : '0 20px 54px rgba(0, 0, 0, 0.34)',
             overflow: 'hidden',
             pointerEvents: 'auto',
             transform: open ? 'translateX(0)' : 'translateX(100%)',
@@ -119,8 +132,10 @@ export default function PendingReviewsDrawer({
             sx={{
               px: { xs: 1.5, sm: 1.75 },
               py: { xs: 1.15, sm: 1.35 },
-              background: 'linear-gradient(160deg, rgba(245, 158, 11, 0.22), rgba(6, 15, 13, 0.98))',
-              borderBottom: '1px solid rgba(148, 163, 184, 0.16)',
+              background: isLightMode
+                ? 'linear-gradient(160deg, rgba(254,243,199,0.92), rgba(255,255,255,0.98))'
+                : 'linear-gradient(160deg, rgba(245, 158, 11, 0.22), rgba(6, 15, 13, 0.98))',
+              borderBottom: isLightMode ? '1px solid rgba(226,232,240,0.92)' : '1px solid rgba(148, 163, 184, 0.16)',
               flexShrink: 0,
             }}
           >
@@ -129,51 +144,45 @@ export default function PendingReviewsDrawer({
                 <Stack spacing={0.45} sx={{ minWidth: 0 }}>
                   <Typography
                     variant="overline"
-                    sx={{ color: '#FDE68A', lineHeight: 1.1, letterSpacing: 1.4 }}
+                    sx={{ color: isLightMode ? '#a16207' : '#FDE68A', lineHeight: 1.1, letterSpacing: 1.4 }}
                   >
                     Review queue
                   </Typography>
                   <Typography
                     variant="h5"
                     sx={{
-                      color: '#F8FAFC',
+                      color: isLightMode ? '#0f172a' : '#F8FAFC',
                       fontWeight: 850,
                       letterSpacing: '-0.03em',
                     }}
                   >
                     Pending Reviews
                   </Typography>
-                  <Typography variant="body2" sx={{ color: 'rgba(203, 213, 225, 0.78)' }}>
+                  <Typography variant="body2" sx={{ color: isLightMode ? '#64748b' : 'rgba(203, 213, 225, 0.78)' }}>
                     Low-confidence inspections waiting for manual review in the Review workspace.
                   </Typography>
                 </Stack>
-                <IconButton
+                <DrawerCloseButton
                   onClick={onClose}
                   aria-label="Close pending reviews"
-                  sx={{
-                    color: '#E2E8F0',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    bgcolor: 'rgba(255, 255, 255, 0.04)',
-                    '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.08)',
-                    },
-                  }}
-                >
-                  <CloseRoundedIcon />
-                </IconButton>
+                />
               </Stack>
 
               <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
                 <Chip
                   size="small"
                   label={`${count} pending`}
-                  sx={{ borderColor: 'rgba(253, 224, 71, 0.28)', color: '#FEF08A' }}
+                  sx={isLightMode
+                    ? { borderColor: 'rgba(251,191,36,0.36)', bgcolor: 'rgba(254,243,199,0.92)', color: '#92400e' }
+                    : { borderColor: 'rgba(253, 224, 71, 0.28)', color: '#FEF08A' }}
                   variant="outlined"
                 />
                 <Chip
                   size="small"
                   label="Open in Review page"
-                  sx={{ borderColor: 'rgba(148, 163, 184, 0.28)', color: '#CBD5E1' }}
+                  sx={isLightMode
+                    ? { borderColor: 'rgba(203,213,225,0.95)', bgcolor: 'rgba(255,255,255,0.82)', color: '#475569' }
+                    : { borderColor: 'rgba(148, 163, 184, 0.28)', color: '#CBD5E1' }}
                   variant="outlined"
                 />
               </Stack>
@@ -186,16 +195,26 @@ export default function PendingReviewsDrawer({
               minHeight: 0,
               overflowY: 'auto',
               p: { xs: 1.25, sm: 1.5 },
-              bgcolor: '#050A09',
+              bgcolor: isLightMode ? '#f1f6f2' : '#050A09',
             }}
           >
             {count === 0 ? (
-              <div className="flex min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-6 py-8 text-center">
-                <div className="mb-3 rounded-full border border-amber-300/20 bg-amber-400/10 p-3 text-amber-200">
+              <div className={cn(
+                'flex min-h-[240px] flex-col items-center justify-center rounded-2xl border px-6 py-8 text-center',
+                isLightMode
+                  ? 'border-dashed border-slate-300 bg-white/80'
+                  : 'border-dashed border-white/10 bg-white/[0.02]',
+              )}>
+                <div className={cn(
+                  'mb-3 rounded-full border p-3',
+                  isLightMode
+                    ? 'border-amber-300/45 bg-amber-100 text-amber-700'
+                    : 'border-amber-300/20 bg-amber-400/10 text-amber-200',
+                )}>
                   <ClipboardCheck className="h-6 w-6" />
                 </div>
-                <p className="text-base font-semibold text-slate-100">Review queue is clear</p>
-                <p className="mt-2 max-w-sm text-sm text-slate-400">
+                <p className={cn('text-base font-semibold', isLightMode ? 'text-slate-900' : 'text-slate-100')}>Review queue is clear</p>
+                <p className={cn('mt-2 max-w-sm text-sm', isLightMode ? 'text-slate-500' : 'text-slate-400')}>
                   Low-confidence inspections will appear here when manual review is required.
                 </p>
               </div>
@@ -206,31 +225,11 @@ export default function PendingReviewsDrawer({
                     key={inspection.id}
                     inspection={inspection}
                     onSelect={onSelectInspection}
+                    isLightMode={isLightMode}
                   />
                 ))}
               </div>
             )}
-          </Box>
-
-          <Box
-            sx={{
-              borderTop: '1px solid rgba(148, 163, 184, 0.12)',
-              px: 2,
-              py: 1.25,
-              bgcolor: '#050A09',
-              flexShrink: 0,
-            }}
-          >
-            <div className={cn('flex flex-wrap items-center gap-3 text-xs text-slate-500')}>
-              <span className="inline-flex items-center gap-1.5">
-                <AlertTriangle className="h-3.5 w-3.5 text-amber-300" />
-                Review-required items stay here until the dashboard data refetches after review.
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Clock3 className="h-3.5 w-3.5 text-slate-400" />
-                Selecting an item opens the Review page with focus on that inspection.
-              </span>
-            </div>
           </Box>
         </Box>
       </Box>

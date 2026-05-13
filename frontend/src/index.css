@@ -4,35 +4,108 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --background: 120 29% 98%;
-    --foreground: 138 20% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 138 20% 12%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 138 20% 12%;
+  :root,
+  :root[data-theme='dark'] {
+    --background: 150 18% 7%;
+    --foreground: 146 28% 95%;
+    --card: 156 15% 10%;
+    --card-foreground: 146 28% 95%;
+    --popover: 156 15% 10%;
+    --popover-foreground: 146 28% 95%;
     --primary: 141 55% 27%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 132 19% 95%;
-    --secondary-foreground: 138 20% 12%;
-    --muted: 132 19% 95%;
-    --muted-foreground: 138 10% 39%;
-    --accent: 132 19% 95%;
-    --accent-foreground: 138 20% 12%;
+    --secondary: 156 13% 13%;
+    --secondary-foreground: 146 26% 93%;
+    --muted: 156 13% 13%;
+    --muted-foreground: 145 11% 67%;
+    --accent: 156 13% 13%;
+    --accent-foreground: 146 26% 93%;
     --destructive: 0 67% 47%;
     --destructive-foreground: 0 0% 100%;
-    --border: 132 16% 87%;
-    --input: 132 16% 87%;
+    --border: 152 15% 18%;
+    --input: 152 15% 18%;
     --ring: 141 55% 27%;
     --radius: 0.75rem;
+    --shell-background: #0c1110;
+    --shell-text: #f2f7f4;
+    --shell-text-muted: rgba(226, 236, 231, 0.7);
+    --shell-border: rgba(226, 236, 231, 0.08);
+    --shell-accent-bg: rgba(122, 226, 122, 0.1);
+    --shell-accent-border: rgba(122, 226, 122, 0.16);
+    --shell-accent-strong-bg: rgba(122, 226, 122, 0.12);
+    --shell-surface-soft: rgba(255, 255, 255, 0.04);
+    --shell-surface-soft-hover: rgba(255, 255, 255, 0.06);
+    --shell-control-bg: rgba(255, 255, 255, 0.02);
+    --shell-control-hover: rgba(255, 255, 255, 0.05);
+    --shell-border-strong: rgba(255, 255, 255, 0.16);
+    --shell-live-bg: rgba(122, 226, 122, 0.08);
+    --shell-live-border: rgba(122, 226, 122, 0.2);
+    --shell-live-text: #c7f5c6;
+    --shell-icon-strong: #c8f5c8;
+    --shell-icon-active: #d8f7d8;
+    --shell-chrome-overlay: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+    --page-glow: rgba(74, 222, 128, 0.08);
+    --scrollbar-track: #0f1714;
+    --scrollbar-thumb: #2d3b34;
+    --scrollbar-thumb-hover: #425449;
+  }
+
+  :root[data-theme='light'] {
+    --background: 132 24% 97%;
+    --foreground: 138 24% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 138 24% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 138 24% 15%;
+    --primary: 144 57% 27%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 132 18% 95%;
+    --secondary-foreground: 138 24% 15%;
+    --muted: 132 18% 95%;
+    --muted-foreground: 138 10% 42%;
+    --accent: 132 18% 95%;
+    --accent-foreground: 138 24% 15%;
+    --destructive: 7 56% 49%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 132 15% 86%;
+    --input: 132 15% 86%;
+    --ring: 144 57% 27%;
+    --shell-background: #eef4ef;
+    --shell-text: #1b3125;
+    --shell-text-muted: rgba(27, 49, 37, 0.66);
+    --shell-border: rgba(33, 58, 44, 0.1);
+    --shell-accent-bg: rgba(29, 107, 67, 0.09);
+    --shell-accent-border: rgba(29, 107, 67, 0.15);
+    --shell-accent-strong-bg: rgba(29, 107, 67, 0.14);
+    --shell-surface-soft: rgba(255, 255, 255, 0.58);
+    --shell-surface-soft-hover: rgba(255, 255, 255, 0.78);
+    --shell-control-bg: rgba(255, 255, 255, 0.72);
+    --shell-control-hover: rgba(255, 255, 255, 0.94);
+    --shell-border-strong: rgba(29, 107, 67, 0.22);
+    --shell-live-bg: rgba(29, 107, 67, 0.1);
+    --shell-live-border: rgba(29, 107, 67, 0.18);
+    --shell-live-text: #145534;
+    --shell-icon-strong: #1d6b43;
+    --shell-icon-active: #145534;
+    --shell-chrome-overlay: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0));
+    --page-glow: rgba(29, 107, 67, 0.03);
+    --scrollbar-track: #edf3ed;
+    --scrollbar-thumb: #bfcdc0;
+    --scrollbar-thumb-hover: #9fb1a1;
   }
 
   * {
     @apply border-border;
   }
 
+  html {
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-background text-foreground;
+    background-image: radial-gradient(circle at top left, var(--page-glow), transparent 26%);
+    transition: background-color 180ms ease, color 180ms ease;
   }
 }
 
@@ -62,15 +135,15 @@ a {
 }
 
 ::-webkit-scrollbar-track {
-  background: #eef4ee;
+  background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c2d1c4;
+  background: var(--scrollbar-thumb);
   border-radius: 999px;
-  border: 2px solid #eef4ee;
+  border: 2px solid var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9db29f;
+  background: var(--scrollbar-thumb-hover);
 }

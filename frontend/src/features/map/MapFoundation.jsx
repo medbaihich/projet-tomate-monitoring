@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { useThemeMode } from '@/theme-mode-context';
 import {
   buildDashboardDiseaseMapSignalsQueryKey,
   fetchDashboardDiseaseMapSignals,
@@ -31,6 +32,7 @@ const EMPTY_DISEASE_SIGNALS = [];
 const EMPTY_INFECTION_ZONES = [];
 const EMPTY_DISEASE_MAP_FILTERS = {};
 const EMPTY_DISEASE_OPTIONS = [];
+const EMPTY_REFERENCE_DISEASES = [];
 const ZONE_TYPE_LABELS = {
   infection_zone: 'Infection zone',
   vector_risk_zone: 'Vector risk zone',
@@ -434,7 +436,7 @@ function getSemanticSignalStyle(signal, diseaseFiltersActive) {
 }
 
 function fitMapToBounds(map, bounds, options) {
-  if (!bounds?.isValid()) {
+  if (!map || typeof map.fitBounds !== 'function' || !bounds?.isValid?.()) {
     return false;
   }
 
@@ -475,6 +477,126 @@ function buildDiseaseFilterParam(value) {
   return {
     disease: value,
   };
+}
+
+function normalizeLegendKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase();
+}
+
+function createBoundsWithCircle(position, radius) {
+  const bounds = L.latLngBounds([]);
+  const center = Array.isArray(position)
+    ? L.latLng(position[0], position[1])
+    : L.latLng(position);
+  bounds.extend(center);
+
+  if (Number.isFinite(radius) && radius > 0) {
+    bounds.extend(center.toBounds(radius * 2));
+  }
+
+  return bounds;
+}
+
+function buildDiseaseLegendEntries({ signals, zones, referenceDiseases }) {
+  const diseaseById = new Map();
+  const diseaseByKey = new Map();
+
+  referenceDiseases.forEach((disease) => {
+    if (disease?.id) {
+      diseaseById.set(String(disease.id), disease);
+    }
+
+    [
+      disease?.ai_label,
+      disease?.slug,
+      disease?.name,
+    ]
+      .map(normalizeLegendKey)
+      .filter(Boolean)
+      .forEach((key) => {
+        if (!diseaseByKey.has(key)) {
+          diseaseByKey.set(key, disease);
+        }
+      });
+  });
+
+  const entries = new Map();
+
+  const ensureEntry = (record) => {
+    const diseaseId = record?.disease_id ? String(record.disease_id) : '';
+    const diseaseKey = normalizeLegendKey(
+      record?.disease_key || record?.ai_label || record?.disease_name || record?.label,
+    );
+    const referenceDisease = (diseaseId && diseaseById.get(diseaseId))
+      || (diseaseKey && diseaseByKey.get(diseaseKey))
+      || null;
+    const profile = referenceDisease?.map_profile ?? null;
+    const entryKey = diseaseId || diseaseKey;
+
+    if (!entryKey) {
+      return null;
+    }
+
+    if (!entries.has(entryKey)) {
+      const radiusValue = Number(
+        profile?.spread_radius_m
+        ?? record?.spread_radius_m
+        ?? record?.radius_meters,
+      );
+      entries.set(entryKey, {
+        key: entryKey,
+        name: referenceDisease?.name || record?.disease_name || record?.label || 'Disease signal',
+        color: resolveSemanticColor(profile || record),
+        radiusMeters: Number.isFinite(radiusValue) && radiusValue >= 0 ? radiusValue : 0,
+        zoneType: profile?.zone_type || record?.zone_type || 'none',
+      });
+    }
+
+    return entries.get(entryKey);
+  };
+
+  signals.forEach((signal) => {
+    const entry = ensureEntry(signal);
+    if (!entry) {
+      return;
+    }
+
+    const radiusValue = Number(signal?.spread_radius_m);
+    if (Number.isFinite(radiusValue) && radiusValue > entry.radiusMeters) {
+      entry.radiusMeters = radiusValue;
+    }
+
+    if (signal?.zone_type && signal.zone_type !== 'none') {
+      entry.zoneType = signal.zone_type;
+    }
+  });
+
+  zones.forEach((zone) => {
+    const entry = ensureEntry(zone);
+    if (!entry) {
+      return;
+    }
+
+    const radiusValue = Number(zone?.spread_radius_m ?? zone?.radius_meters);
+    if (Number.isFinite(radiusValue) && radiusValue > entry.radiusMeters) {
+      entry.radiusMeters = radiusValue;
+    }
+
+    if (zone?.zone_type && zone.zone_type !== 'none') {
+      entry.zoneType = zone.zone_type;
+    }
+  });
+
+  return [...entries.values()]
+    .map((entry) => ({
+      ...entry,
+      radiusLabel: entry.radiusMeters > 0
+        ? `${formatRadiusMeters(entry.radiusMeters)} ${formatZoneType(entry.zoneType).toLowerCase()}`
+        : 'Marker only',
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function toDiseaseFilterValue(disease) {
@@ -530,13 +652,15 @@ function DiseaseMapLayerStatus({ query, summary, hasDeviceFilter }) {
   }
 
   if (summary.total_signals === 0) {
+    if (hasDeviceFilter) {
+      return null;
+    }
+
     return (
       <Alert>
-        <AlertTitle>{hasDeviceFilter ? 'No disease alerts for this device' : 'No disease alerts on the map yet'}</AlertTitle>
+        <AlertTitle>No disease alerts on the map yet</AlertTitle>
         <AlertDescription>
-          {hasDeviceFilter
-            ? 'This device has no mapped disease-positive inspections yet.'
-            : 'Disease-positive inspections will appear here when new alerts are received.'}
+          Disease-positive inspections will appear here when new alerts are received.
         </AlertDescription>
       </Alert>
     );
@@ -564,16 +688,20 @@ function DiseaseMapLayerStatus({ query, summary, hasDeviceFilter }) {
     );
   }
 
-  return (
-    <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-      Dashboard disease map data is ready for signal markers and estimated risk zone circles.
-    </div>
-  );
+  return null;
 }
 
 function DiseaseMapLegend() {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
+
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+    <div className={cn(
+      'flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-xs',
+      isLightMode
+        ? 'border-slate-200 bg-white/82 text-slate-600 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
+        : 'border-border bg-muted/20 text-muted-foreground',
+    )}>
       <span className="flex items-center gap-1.5">
         <span className="h-3 w-3 rounded-full border-2 border-red-900 bg-red-500" />
         Disease signal marker
@@ -594,12 +722,78 @@ function DiseaseMapLegend() {
   );
 }
 
+function DiseaseProfileLegend({ entries }) {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
+
+  if (!entries.length) {
+    return null;
+  }
+
+  return (
+    <div className={cn(
+      'rounded-md border px-3 py-2',
+      isLightMode
+        ? 'border-slate-200 bg-white/82 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
+        : 'border-border bg-muted/20',
+    )}>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className={cn(
+          'text-[0.7rem] font-semibold uppercase tracking-[0.12em]',
+          isLightMode ? 'text-slate-600' : 'text-muted-foreground',
+        )}>
+          Visible disease profiles
+        </span>
+        <span className={cn('text-[0.68rem]', isLightMode ? 'text-slate-500' : 'text-muted-foreground')}>
+          Catalog color and configured spread radius
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {entries.map((entry) => (
+          <div
+            key={entry.key}
+            className={cn(
+              'min-w-0 rounded-full border px-3 py-1.5 text-xs',
+              isLightMode
+                ? 'border-slate-200 bg-white/92 shadow-[0_6px_14px_rgba(15,23,42,0.04)]'
+                : 'border-white/10 bg-white/[0.045]',
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-3.5 w-5 shrink-0 items-center justify-center">
+                <span
+                  className="absolute inset-x-0 top-0.5 h-2.5 rounded-full border"
+                  style={{
+                    borderColor: entry.color,
+                    backgroundColor: entry.color,
+                    opacity: 0.22,
+                  }}
+                />
+                <span
+                  className="relative h-2 w-2 rounded-full"
+                  style={{ backgroundColor: entry.color }}
+                />
+              </span>
+              <span className={cn('truncate font-medium', isLightMode ? 'text-slate-800' : 'text-foreground')}>{entry.name}</span>
+              <span className={cn('shrink-0', isLightMode ? 'text-slate-500' : 'text-muted-foreground')}>{entry.radiusLabel}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function MapFoundation({
   enableDiseaseLayers = false,
   diseaseMapFilters = EMPTY_DISEASE_MAP_FILTERS,
+  referenceDiseases = EMPTY_REFERENCE_DISEASES,
   showFilters = true,
   selectedDeviceId = '',
   focusInspectionId = '',
+  mapHeightClassName = 'h-[28rem]',
+  legendMode = 'default',
+  adaptiveViewport = false,
   onDeviceSelect,
   siteFilter: controlledSiteFilter,
   greenhouseFilter: controlledGreenhouseFilter,
@@ -614,6 +808,8 @@ export default function MapFoundation({
   onZoneFilterChange,
   onLineFilterChange,
 }) {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
   const mapContainerRef = useRef(null);
   const [internalSiteFilter, setInternalSiteFilter] = useState('');
   const [internalGreenhouseFilter, setInternalGreenhouseFilter] = useState('');
@@ -754,6 +950,26 @@ export default function MapFoundation({
     enableDiseaseLayers
     && (diseaseFilter || severityFilter || minConfidenceFilter || timeWindowFilter),
   );
+  const diseaseLegendEntries = useMemo(
+    () => buildDiseaseLegendEntries({
+      signals: displayDiseaseSignals,
+      zones: displayInfectionZones,
+      referenceDiseases,
+    }),
+    [displayDiseaseSignals, displayInfectionZones, referenceDiseases],
+  );
+  const badgeClassName = isLightMode
+    ? 'border-slate-200 bg-white/90 text-slate-700 shadow-[0_6px_14px_rgba(15,23,42,0.04)]'
+    : undefined;
+  const refreshButtonClassName = isLightMode
+    ? 'gap-2 border-slate-200 bg-white/92 text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.05)] hover:border-slate-300 hover:bg-slate-50'
+    : 'gap-2';
+  const mapFrameClassName = isLightMode
+    ? 'overflow-hidden rounded-md border border-slate-200 bg-white/82 shadow-[0_12px_30px_rgba(15,23,42,0.06)]'
+    : 'overflow-hidden rounded-md border border-border bg-muted';
+  const emptyStateClassName = isLightMode
+    ? 'flex flex-col items-center justify-center rounded-md border border-dashed border-slate-200 bg-white/68 p-6 text-center'
+    : 'flex flex-col items-center justify-center rounded-md border border-dashed border-border bg-muted/30 p-6 text-center';
 
   useEffect(() => {
     if (!mapContainerRef.current || mappedDevices.length === 0) {
@@ -775,6 +991,7 @@ export default function MapFoundation({
 
     const bounds = L.latLngBounds([]);
     const diseaseBounds = L.latLngBounds([]);
+    const selectedDeviceBounds = L.latLngBounds([]);
 
     mappedDevices.forEach((device) => {
       const position = toValidPosition(device.latitude, device.longitude);
@@ -796,6 +1013,7 @@ export default function MapFoundation({
 
       if (selectedDeviceId && device.id === selectedDeviceId) {
         marker.openPopup();
+        selectedDeviceBounds.extend(position);
       }
     });
 
@@ -818,10 +1036,7 @@ export default function MapFoundation({
         })
           .bindPopup(createInfectionZonePopupContent(zone))
           .addTo(diseaseZoneLayer);
-
-        // Fit to validated signal/zone centers. Some browsers can become unstable
-        // when repeatedly fitting map bounds derived from SVG circle radii.
-        diseaseBounds.extend(position);
+        diseaseBounds.extend(createBoundsWithCircle(position, radius));
       });
 
       displayDiseaseSignals.forEach((signal) => {
@@ -838,11 +1053,56 @@ export default function MapFoundation({
     }
 
     const selectedMappedDevice = mappedDevices.find((device) => device.id === selectedDeviceId);
-    if (selectedMappedDevice) {
-      const selectedPosition = toValidPosition(
-        selectedMappedDevice.latitude,
-        selectedMappedDevice.longitude,
-      );
+    const selectedPosition = selectedMappedDevice
+      ? toValidPosition(selectedMappedDevice.latitude, selectedMappedDevice.longitude)
+      : null;
+    const focusSignalPosition = focusedDiseaseSignal
+      ? toValidPosition(focusedDiseaseSignal.latitude, focusedDiseaseSignal.longitude)
+      : null;
+
+    if (adaptiveViewport) {
+      if (focusInspectionId) {
+        const didFitFocusedBounds = fitMapToBounds(map, diseaseBounds, {
+          padding: [34, 34],
+          maxZoom: 16,
+        });
+
+        if (!didFitFocusedBounds && focusSignalPosition) {
+          map.setView(focusSignalPosition, 16);
+        } else if (!didFitFocusedBounds) {
+          fitMapToBounds(map, bounds, {
+            padding: [32, 32],
+            maxZoom: 16,
+          });
+        }
+      } else {
+        const adaptiveBounds = L.latLngBounds([]);
+
+        if (selectedDeviceBounds.isValid()) {
+          adaptiveBounds.extend(selectedDeviceBounds);
+        }
+
+        if (diseaseBounds.isValid()) {
+          adaptiveBounds.extend(diseaseBounds);
+        } else {
+          adaptiveBounds.extend(bounds);
+        }
+
+        const didFitAdaptiveBounds = fitMapToBounds(map, adaptiveBounds, {
+          padding: [32, 32],
+          maxZoom: 16,
+        });
+
+        if (!didFitAdaptiveBounds && selectedPosition) {
+          map.setView(selectedPosition, 16);
+        } else if (!didFitAdaptiveBounds) {
+          fitMapToBounds(map, bounds, {
+            padding: [32, 32],
+            maxZoom: 16,
+          });
+        }
+      }
+    } else if (selectedMappedDevice) {
       if (selectedPosition) {
         map.setView(selectedPosition, 17);
       }
@@ -865,9 +1125,16 @@ export default function MapFoundation({
       });
     }
 
-    window.setTimeout(() => map.invalidateSize(), 0);
+    const invalidateSizeTimeoutId = window.setTimeout(() => {
+      try {
+        map.invalidateSize();
+      } catch {
+        // Ignore invalidation races during unmount/teardown.
+      }
+    }, 0);
 
     return () => {
+      window.clearTimeout(invalidateSizeTimeoutId);
       map.remove();
     };
   }, [
@@ -875,9 +1142,12 @@ export default function MapFoundation({
     displayDiseaseSignals,
     displayInfectionZones,
     enableDiseaseLayers,
+    focusInspectionId,
+    focusedDiseaseSignal,
     mappedDevices,
     onDeviceSelect,
     selectedDeviceId,
+    adaptiveViewport,
   ]);
 
   const handleSiteSelect = (value) => {
@@ -926,7 +1196,7 @@ export default function MapFoundation({
     return (
       <div className="space-y-3">
         <Skeleton className="h-9 w-full max-w-4xl" />
-        <Skeleton className="h-[28rem] w-full" />
+        <Skeleton className={cn('w-full', mapHeightClassName)} />
       </div>
     );
   }
@@ -1052,20 +1322,20 @@ export default function MapFoundation({
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{mappedDevices.length} mapped</Badge>
-          <Badge variant="outline">{unmappedDeviceCount} unmapped</Badge>
+          <Badge variant="outline" className={badgeClassName}>{mappedDevices.length} mapped</Badge>
+          <Badge variant="outline" className={badgeClassName}>{unmappedDeviceCount} unmapped</Badge>
           {enableDiseaseLayers ? (
             <>
-              <Badge variant="outline">{displayDiseaseMapSummary.mapped_signals} disease signals</Badge>
-              <Badge variant="outline">{displayDiseaseMapSummary.infection_zone_count} estimated zones</Badge>
-              <Badge variant="outline">{displayDiseaseMapSummary.unmapped_signals} unmapped signals</Badge>
+              <Badge variant="outline" className={badgeClassName}>{displayDiseaseMapSummary.mapped_signals} disease signals</Badge>
+              <Badge variant="outline" className={badgeClassName}>{displayDiseaseMapSummary.infection_zone_count} estimated zones</Badge>
+              <Badge variant="outline" className={badgeClassName}>{displayDiseaseMapSummary.unmapped_signals} unmapped signals</Badge>
             </>
           ) : null}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="gap-2"
+            className={refreshButtonClassName}
             onClick={() => {
               mapDevicesQuery.refetch();
               if (enableDiseaseLayers) {
@@ -1103,14 +1373,18 @@ export default function MapFoundation({
         />
       ) : null}
 
-      {enableDiseaseLayers ? <DiseaseMapLegend /> : null}
+      {enableDiseaseLayers ? (
+        legendMode === 'disease-profiles'
+          ? <DiseaseProfileLegend entries={diseaseLegendEntries} />
+          : <DiseaseMapLegend />
+      ) : null}
 
       {mappedDevices.length > 0 ? (
-        <div className="h-[28rem] overflow-hidden rounded-md border border-border bg-muted">
+        <div className={cn(mapFrameClassName, mapHeightClassName)}>
           <div ref={mapContainerRef} className="h-full w-full" aria-label="Device location map" />
         </div>
       ) : (
-        <div className="flex h-[28rem] flex-col items-center justify-center rounded-md border border-dashed border-border bg-muted/30 p-6 text-center">
+        <div className={cn(emptyStateClassName, mapHeightClassName)}>
           <div className="mb-3 rounded-full border border-border bg-background p-3 text-muted-foreground">
             <MapPinned className="h-6 w-6" aria-hidden="true" />
           </div>
@@ -1123,10 +1397,6 @@ export default function MapFoundation({
           </p>
         </div>
       )}
-
-      <p className="text-xs text-muted-foreground">
-        Uses OpenStreetMap raster tiles without paid tokens. Local deployments can swap the tile source later.
-      </p>
     </div>
   );
 }

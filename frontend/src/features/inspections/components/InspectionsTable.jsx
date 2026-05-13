@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { useThemeMode } from '@/theme-mode-context';
 import {
   formatInspectionConfidence,
   formatInspectionDateTime,
@@ -134,7 +135,18 @@ export default function InspectionsTable({
   onSelectInspection,
   onRefresh,
 }) {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  const toolbarClassName = isLightMode
+    ? 'rounded-xl border border-slate-200 bg-white/72 px-2.5 py-2 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
+    : '';
+  const tableShellClassName = isLightMode
+    ? 'rounded-xl border border-slate-200 bg-white/84 shadow-[0_14px_30px_rgba(15,23,42,0.05)]'
+    : 'rounded-md border border-border bg-card';
+  const footerClassName = isLightMode
+    ? 'rounded-xl border border-slate-200 bg-white/72 px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
+    : '';
   const columns = useMemo(
     () => [
       {
@@ -266,7 +278,7 @@ export default function InspectionsTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start justify-end">
+      <div className={cn('flex items-start justify-end', toolbarClassName)}>
         <Button
           type="button"
           variant="outline"
@@ -283,13 +295,16 @@ export default function InspectionsTable({
       {isLoading ? (
         <InspectionsTableSkeleton />
       ) : (
-        <div className="rounded-md border border-border bg-card">
+        <div className={tableShellClassName}>
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="hover:bg-transparent">
                   {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="h-10 whitespace-nowrap px-3">
+                    <TableHead
+                      key={header.id}
+                      className={cn('h-10 whitespace-nowrap px-3', isLightMode && 'bg-slate-50/80 text-slate-600')}
+                    >
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
@@ -304,7 +319,12 @@ export default function InspectionsTable({
                   <TableRow
                     key={row.id}
                     data-state={selectedInspectionId === row.original.id ? 'selected' : undefined}
-                    className="cursor-pointer"
+                    className={cn(
+                      'cursor-pointer transition-colors',
+                      isLightMode
+                        ? 'hover:bg-emerald-50/55 data-[state=selected]:bg-emerald-50/80'
+                        : '',
+                    )}
                     onClick={() => onSelectInspection(row.original)}
                   >
                     {row.getVisibleCells().map((cell) => (
@@ -326,7 +346,7 @@ export default function InspectionsTable({
         </div>
       )}
 
-      <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+      <div className={cn('flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between', footerClassName)}>
         <span>
           Showing {firstRow}-{lastRow} of {totalCount}
         </span>

@@ -18,9 +18,12 @@ import {
 } from '@mui/material';
 import {
   AdminPanelSettings as AdminPanelSettingsIcon,
+  DarkModeOutlined as DarkModeOutlinedIcon,
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   FactCheck as FactCheckIcon,
+  LightModeOutlined as LightModeOutlinedIcon,
+  QueryStats as QueryStatsIcon,
   Router as RouterIcon,
   MenuBook as MenuBookIcon,
   Logout as LogoutIcon,
@@ -29,8 +32,27 @@ import {
 } from '@mui/icons-material';
 import azuraLogo from '@/assets/branding/azura_logo.png';
 import useAuthStore from '@/store/authStore';
+import { useThemeMode } from '@/theme-mode-context';
 
 const drawerWidth = 72;
+const SHELL_BACKGROUND = 'var(--shell-background)';
+const SHELL_CHROME_OVERLAY = 'var(--shell-chrome-overlay)';
+const SHELL_BORDER = 'var(--shell-border)';
+const SHELL_TEXT = 'var(--shell-text)';
+const SHELL_TEXT_MUTED = 'var(--shell-text-muted)';
+const SHELL_ACCENT_BG = 'var(--shell-accent-bg)';
+const SHELL_ACCENT_BORDER = 'var(--shell-accent-border)';
+const SHELL_ACCENT_STRONG_BG = 'var(--shell-accent-strong-bg)';
+const SHELL_SURFACE_SOFT = 'var(--shell-surface-soft)';
+const SHELL_SURFACE_SOFT_HOVER = 'var(--shell-surface-soft-hover)';
+const SHELL_CONTROL_BG = 'var(--shell-control-bg)';
+const SHELL_CONTROL_HOVER = 'var(--shell-control-hover)';
+const SHELL_BORDER_STRONG = 'var(--shell-border-strong)';
+const SHELL_LIVE_BG = 'var(--shell-live-bg)';
+const SHELL_LIVE_BORDER = 'var(--shell-live-border)';
+const SHELL_LIVE_TEXT = 'var(--shell-live-text)';
+const SHELL_ICON_STRONG = 'var(--shell-icon-strong)';
+const SHELL_ICON_ACTIVE = 'var(--shell-icon-active)';
 
 export default function MainLayout(props) {
   const { window } = props;
@@ -39,6 +61,7 @@ export default function MainLayout(props) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
+  const { mode, toggleMode } = useThemeMode();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -58,13 +81,15 @@ export default function MainLayout(props) {
   const normalizedRole = roleName.toLowerCase();
   const displayName = user?.username || 'Operator';
   const isAccountRoute = location.pathname.startsWith('/account');
-  const isDashboardRoute = location.pathname.startsWith('/dashboard');
   const roleIcon = normalizedRole === 'admin'
     ? <AdminPanelSettingsIcon fontSize="small" />
     : <PrecisionManufacturingIcon fontSize="small" />;
 
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+    ...(normalizedRole === 'admin'
+      ? [{ text: 'Monitoring', icon: <QueryStatsIcon />, path: '/monitoring' }]
+      : []),
     { text: 'Inspections', icon: <RuleFolderIcon />, path: '/inspections' },
     { text: 'Review', icon: <FactCheckIcon />, path: '/review' },
     { text: 'Devices', icon: <RouterIcon />, path: '/devices' },
@@ -85,17 +110,17 @@ export default function MainLayout(props) {
               p: 0,
               minHeight: 'unset',
               borderRadius: 2,
-              bgcolor: isAccountRoute ? 'rgba(122, 226, 122, 0.1)' : 'rgba(255,255,255,0.04)',
+              bgcolor: isAccountRoute ? SHELL_ACCENT_BG : SHELL_SURFACE_SOFT,
               border: '1px solid',
-              borderColor: isAccountRoute ? 'rgba(122, 226, 122, 0.16)' : 'rgba(255,255,255,0.08)',
+              borderColor: isAccountRoute ? SHELL_ACCENT_BORDER : SHELL_BORDER,
               boxShadow: '0 1px 4px rgba(0, 0, 0, 0.14)',
               alignItems: 'center',
               justifyContent: 'center',
               '&:hover': {
-                bgcolor: isAccountRoute ? 'rgba(122, 226, 122, 0.12)' : 'rgba(255,255,255,0.06)',
+                bgcolor: isAccountRoute ? SHELL_ACCENT_STRONG_BG : SHELL_SURFACE_SOFT_HOVER,
               },
               '&.Mui-selected': {
-                bgcolor: 'rgba(122, 226, 122, 0.1)',
+                bgcolor: SHELL_ACCENT_BG,
               },
             }}
           >
@@ -104,8 +129,8 @@ export default function MainLayout(props) {
                 width: 30,
                 height: 30,
                 borderRadius: 1,
-                bgcolor: 'rgba(122, 226, 122, 0.12)',
-                color: '#C8F5C8',
+                bgcolor: SHELL_ACCENT_STRONG_BG,
+                color: SHELL_ICON_STRONG,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -136,11 +161,11 @@ export default function MainLayout(props) {
                       p: 0,
                       borderRadius: 2,
                       justifyContent: 'center',
-                      bgcolor: isActive ? 'rgba(122, 226, 122, 0.1)' : 'transparent',
+                      bgcolor: isActive ? SHELL_ACCENT_BG : 'transparent',
                       border: '1px solid',
-                      borderColor: isActive ? 'rgba(122, 226, 122, 0.16)' : 'transparent',
+                      borderColor: isActive ? SHELL_ACCENT_BORDER : 'transparent',
                       '&:hover': {
-                        bgcolor: isActive ? 'rgba(122, 226, 122, 0.12)' : 'rgba(255,255,255,0.05)',
+                        bgcolor: isActive ? SHELL_ACCENT_STRONG_BG : SHELL_SURFACE_SOFT,
                       },
                       '&::before': isActive
                         ? {
@@ -151,7 +176,7 @@ export default function MainLayout(props) {
                             bottom: 8,
                             width: 2,
                             borderRadius: 999,
-                            bgcolor: '#7AE27A',
+                            bgcolor: SHELL_ICON_STRONG,
                           }
                         : undefined,
                     }}
@@ -159,7 +184,7 @@ export default function MainLayout(props) {
                     <ListItemIcon
                       sx={{
                         minWidth: 0,
-                        color: isActive ? '#D8F7D8' : 'rgba(226,236,231,0.64)',
+                        color: isActive ? SHELL_ICON_ACTIVE : SHELL_TEXT_MUTED,
                         justifyContent: 'center',
                       }}
                     >
@@ -170,7 +195,7 @@ export default function MainLayout(props) {
                           display: 'grid',
                           placeItems: 'center',
                           borderRadius: 1,
-                          bgcolor: isActive ? 'rgba(122, 226, 122, 0.12)' : 'transparent',
+                          bgcolor: isActive ? SHELL_ACCENT_STRONG_BG : 'transparent',
                         }}
                       >
                         {item.icon}
@@ -198,10 +223,10 @@ export default function MainLayout(props) {
           width: { md: `calc(100% - ${drawerWidth}px)` },
           ml: { md: `${drawerWidth}px` },
           borderBottom: '1px solid',
-          borderColor: isDashboardRoute ? 'rgba(255,255,255,0.08)' : 'divider',
-          bgcolor: isDashboardRoute ? 'rgba(8, 12, 11, 0.92)' : 'rgba(255, 255, 255, 0.96)',
-          color: isDashboardRoute ? '#F2F7F4' : 'text.primary',
-          backdropFilter: 'blur(18px)',
+          borderColor: SHELL_BORDER,
+          bgcolor: SHELL_BACKGROUND,
+          color: SHELL_TEXT,
+          backgroundImage: SHELL_CHROME_OVERLAY,
         }}
       >
         <Toolbar sx={{ minHeight: 48, px: { xs: 1, sm: 1.25 } }}>
@@ -236,9 +261,34 @@ export default function MainLayout(props) {
             sx={{
               pl: 1,
               borderLeft: '1px solid',
-              borderColor: 'divider',
+              borderColor: SHELL_BORDER,
             }}
           >
+            <Tooltip title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+              <IconButton
+                onClick={toggleMode}
+                aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                size="small"
+                sx={{
+                  color: SHELL_TEXT,
+                  border: '1px solid',
+                  borderColor: SHELL_BORDER,
+                  bgcolor: SHELL_CONTROL_BG,
+                  width: 30,
+                  height: 30,
+                  '&:hover': {
+                    borderColor: SHELL_BORDER_STRONG,
+                    bgcolor: SHELL_CONTROL_HOVER,
+                  },
+                }}
+              >
+                {mode === 'dark' ? (
+                  <LightModeOutlinedIcon sx={{ fontSize: 18 }} />
+                ) : (
+                  <DarkModeOutlinedIcon sx={{ fontSize: 18 }} />
+                )}
+              </IconButton>
+            </Tooltip>
             <Chip
               size="small"
               label="Live system"
@@ -247,13 +297,12 @@ export default function MainLayout(props) {
               sx={{
                 fontSize: '0.68rem',
                 letterSpacing: '0.02em',
-                bgcolor: isDashboardRoute ? 'rgba(122, 226, 122, 0.08)' : 'rgba(255,255,255,0.72)',
-                color: isDashboardRoute ? '#C7F5C6' : undefined,
-                borderColor: isDashboardRoute ? 'rgba(122, 226, 122, 0.2)' : undefined,
+                bgcolor: SHELL_LIVE_BG,
+                color: SHELL_LIVE_TEXT,
+                borderColor: SHELL_LIVE_BORDER,
               }}
             />
             <Button
-              color="error"
               variant="outlined"
               onClick={handleLogout}
               startIcon={<LogoutIcon />}
@@ -261,6 +310,13 @@ export default function MainLayout(props) {
               sx={{
                 minHeight: 30,
                 px: 1.1,
+                color: SHELL_TEXT,
+                borderColor: SHELL_BORDER,
+                bgcolor: SHELL_CONTROL_BG,
+                '&:hover': {
+                  borderColor: SHELL_BORDER_STRONG,
+                  bgcolor: SHELL_CONTROL_HOVER,
+                },
               }}
             >
               Logout
@@ -283,9 +339,10 @@ export default function MainLayout(props) {
             '& .MuiDrawer-paper': {
               boxSizing: 'border-box',
               width: drawerWidth,
-              bgcolor: '#0C1110',
-              color: '#F2F7F4',
-              borderRight: '1px solid rgba(255,255,255,0.08)',
+              bgcolor: SHELL_BACKGROUND,
+              color: SHELL_TEXT,
+              borderRight: `1px solid ${SHELL_BORDER}`,
+              backgroundImage: SHELL_CHROME_OVERLAY,
             },
           }}
         >
@@ -299,10 +356,10 @@ export default function MainLayout(props) {
               boxSizing: 'border-box',
               width: drawerWidth,
               overflowX: 'hidden',
-              bgcolor: '#0C1110',
-              color: '#F2F7F4',
-              borderRight: '1px solid rgba(255,255,255,0.08)',
-              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))',
+              bgcolor: SHELL_BACKGROUND,
+              color: SHELL_TEXT,
+              borderRight: `1px solid ${SHELL_BORDER}`,
+              backgroundImage: SHELL_CHROME_OVERLAY,
             },
           }}
           open
@@ -327,9 +384,9 @@ export default function MainLayout(props) {
           sx={{
             minWidth: 0,
             overflowX: 'hidden',
-            px: { xs: 1, sm: 1.25, lg: isDashboardRoute ? 1.5 : 2 },
+            px: { xs: 1, sm: 1.25, lg: location.pathname.startsWith('/dashboard') ? 1.5 : 2 },
             py: { xs: 1, sm: 1.25, lg: 1.25 },
-            maxWidth: isDashboardRoute ? 'none' : 1400,
+            maxWidth: location.pathname.startsWith('/dashboard') ? 'none' : 1400,
           }}
         >
           <Outlet />

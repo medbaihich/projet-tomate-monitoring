@@ -12,6 +12,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { useThemeMode } from '@/theme-mode-context';
 
 function slugify(value) {
   return (value || '')
@@ -81,6 +82,8 @@ export default function CreateDiseaseDialog({
   onSubmit,
   isSubmitting,
 }) {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
   const [form, setForm] = useState(INITIAL_FORM);
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState('');
@@ -164,11 +167,20 @@ export default function CreateDiseaseDialog({
       onClose={isSubmitting ? undefined : onClose}
       fullWidth
       maxWidth="md"
+      PaperProps={{
+        sx: isLightMode
+          ? {
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.99), rgba(244,248,244,0.98))',
+              border: '1px solid rgba(214,224,215,0.95)',
+              boxShadow: '0 20px 44px rgba(15,23,42,0.14)',
+            }
+          : undefined,
+      }}
     >
-      <DialogTitle>Create disease</DialogTitle>
-      <DialogContent dividers>
+      <DialogTitle sx={isLightMode ? { color: '#0f172a', fontWeight: 800 } : undefined}>Create disease</DialogTitle>
+      <DialogContent dividers sx={isLightMode ? { borderColor: 'rgba(226,232,240,0.92)' } : undefined}>
         <Stack spacing={1.5} component="form" onSubmit={handleSubmit} id="create-disease-form">
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="text.secondary" sx={isLightMode ? { color: '#64748b' } : undefined}>
             Add a new disease record directly inside Smart Eye. Related causes, treatments, and resources can still be enriched later.
           </Typography>
 
@@ -277,7 +289,7 @@ export default function CreateDiseaseDialog({
           </Grid>
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, py: 1.5 }}>
+      <DialogActions sx={isLightMode ? { px: 3, py: 1.5, borderTop: '1px solid rgba(226,232,240,0.92)', bgcolor: 'rgba(248,250,252,0.72)' } : { px: 3, py: 1.5 }}>
         <Button onClick={onClose} disabled={isSubmitting}>
           Cancel
         </Button>

@@ -15,6 +15,7 @@ import {
   resolveReviewDecisionTone,
   resolveReviewerLabel,
 } from '@/features/review/utils';
+import { useThemeMode } from '@/theme-mode-context';
 
 function resolvePredictionLabel(inspection, diseaseMap) {
   const predictedDisease = inspection?.predicted_disease ? diseaseMap.get(inspection.predicted_disease) : null;
@@ -44,6 +45,9 @@ export default function ReviewWorkspaceList({
   emptyTitle,
   emptyMessage,
 }) {
+  const { mode: themeMode } = useThemeMode();
+  const isLightMode = themeMode === 'light';
+
   if (!items.length) {
     return <StateBlock title={emptyTitle} message={emptyMessage} minHeight={280} />;
   }
@@ -63,8 +67,12 @@ export default function ReviewWorkspaceList({
             variant="outlined"
             sx={{
               borderColor: isSelected ? 'primary.main' : 'divider',
-              boxShadow: isSelected ? '0 8px 18px rgba(18, 75, 47, 0.08)' : 'none',
-              bgcolor: isSelected ? 'rgba(31, 106, 61, 0.04)' : 'background.paper',
+              boxShadow: isSelected
+                ? (isLightMode ? '0 12px 26px rgba(29, 107, 67, 0.10)' : '0 8px 18px rgba(18, 75, 47, 0.08)')
+                : (isLightMode ? '0 10px 24px rgba(15,23,42,0.04)' : 'none'),
+              bgcolor: isSelected
+                ? (isLightMode ? 'rgba(220, 252, 231, 0.78)' : 'rgba(31, 106, 61, 0.04)')
+                : 'background.paper',
             }}
           >
             <CardActionArea onClick={() => onSelectItem(item)}>

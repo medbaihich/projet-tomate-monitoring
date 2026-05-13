@@ -3,6 +3,8 @@ import PanelCard from '@/components/ui/PanelCard';
 import StateBlock from '@/components/ui/StateBlock';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
+import { useThemeMode } from '@/theme-mode-context';
 
 const ORGAN_LABELS = {
   fruit: 'Fruit',
@@ -125,7 +127,7 @@ function BubblePreview({ disease, maxRadius }) {
   );
 }
 
-function DiseaseBubbleCard({ disease, maxRadius, onSelectDisease }) {
+function DiseaseBubbleCard({ disease, maxRadius, onSelectDisease, isLightMode }) {
   const profile = disease.map_profile;
   const radius = getRadiusValue(profile);
   const zoneType = profile?.zone_type || 'none';
@@ -140,7 +142,12 @@ function DiseaseBubbleCard({ disease, maxRadius, onSelectDisease }) {
     <button
       type="button"
       onClick={() => onSelectDisease(disease)}
-      className="group flex h-full w-full flex-col rounded-xl border border-border bg-card/70 p-3 text-left transition hover:border-primary/40 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className={cn(
+        'group flex h-full w-full flex-col rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        isLightMode
+          ? 'border-slate-200 bg-white/84 shadow-[0_10px_24px_rgba(15,23,42,0.04)] hover:border-emerald-300 hover:bg-white'
+          : 'border-border bg-card/70 hover:border-primary/40 hover:bg-card',
+      )}
     >
       <BubblePreview disease={disease} maxRadius={maxRadius} />
 
@@ -199,6 +206,8 @@ export default function CatalogDiseaseSpreadMap({
   isError,
   onSelectDisease,
 }) {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
   const groupedDiseases = useMemo(() => groupDiseases(diseases), [diseases]);
   const summary = useMemo(() => {
     const profiledCount = diseases.filter((disease) => disease.map_profile).length;
@@ -245,13 +254,13 @@ export default function CatalogDiseaseSpreadMap({
       {!isLoading && !isError && diseases.length > 0 ? (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline" className="bg-background font-medium">
+            <Badge variant="outline" className={cn('font-medium', isLightMode ? 'border-slate-200 bg-white/90 text-slate-700' : 'bg-background')}>
               {summary.total} diseases
             </Badge>
-            <Badge variant="outline" className="bg-background font-medium">
+            <Badge variant="outline" className={cn('font-medium', isLightMode ? 'border-slate-200 bg-white/90 text-slate-700' : 'bg-background')}>
               {summary.noZoneCount} no zone
             </Badge>
-            <Badge variant="outline" className="bg-background font-medium">
+            <Badge variant="outline" className={cn('font-medium', isLightMode ? 'border-slate-200 bg-white/90 text-slate-700' : 'bg-background')}>
               Bubble size uses spread radius
             </Badge>
           </div>
@@ -265,7 +274,7 @@ export default function CatalogDiseaseSpreadMap({
                     <div className="text-sm font-semibold text-foreground">
                       {ORGAN_LABELS[organType] || formatLabel(organType)}
                     </div>
-                    <Badge variant="outline" className="bg-background font-medium">
+                    <Badge variant="outline" className={cn('font-medium', isLightMode ? 'border-slate-200 bg-white/90 text-slate-700' : 'bg-background')}>
                       {organDiseases.length} disease{organDiseases.length === 1 ? '' : 's'}
                     </Badge>
                   </div>
@@ -277,6 +286,7 @@ export default function CatalogDiseaseSpreadMap({
                         disease={disease}
                         maxRadius={maxRadius}
                         onSelectDisease={onSelectDisease}
+                        isLightMode={isLightMode}
                       />
                     ))}
                   </div>

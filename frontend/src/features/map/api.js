@@ -5,6 +5,7 @@ export const DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY = ['dashboard', 'map', 'dis
 const DISEASE_MAP_SIGNAL_PARAM_NAMES = [
   'disease',
   'disease_name',
+  'latest_per_device',
   'severity',
   'min_confidence',
   'captured_after',

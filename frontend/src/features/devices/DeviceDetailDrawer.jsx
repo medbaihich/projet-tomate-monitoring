@@ -4,15 +4,15 @@ import {
   CardContent,
   Chip,
   Divider,
-  IconButton,
   Portal,
   Stack,
   Typography,
 } from '@mui/material';
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeviceHubRoundedIcon from '@mui/icons-material/DeviceHubRounded';
 import MyLocationRoundedIcon from '@mui/icons-material/MyLocationRounded';
 import RouteRoundedIcon from '@mui/icons-material/RouteRounded';
+import DrawerCloseButton from '@/components/ui/DrawerCloseButton';
+import { useThemeMode } from '@/theme-mode-context';
 
 function hasValue(value) {
   return value !== null && value !== undefined && value !== '';
@@ -38,13 +38,13 @@ function formatDateTime(value) {
   }).format(date);
 }
 
-function DetailRow({ label, value }) {
+function DetailRow({ label, value, isLightMode }) {
   return (
     <Stack spacing={0.35}>
       <Typography
         variant="caption"
         sx={{
-          color: 'rgba(148, 163, 184, 0.92)',
+          color: isLightMode ? '#64748b' : 'rgba(148, 163, 184, 0.92)',
           letterSpacing: 0.7,
           textTransform: 'uppercase',
         }}
@@ -54,7 +54,7 @@ function DetailRow({ label, value }) {
       <Typography
         variant="body2"
         sx={{
-          color: 'rgba(241, 245, 249, 0.96)',
+          color: isLightMode ? '#0f172a' : 'rgba(241, 245, 249, 0.96)',
           overflowWrap: 'anywhere',
         }}
       >
@@ -64,14 +64,15 @@ function DetailRow({ label, value }) {
   );
 }
 
-function SectionCard({ icon, title, subtitle, children }) {
+function SectionCard({ icon, title, subtitle, children, isLightMode }) {
   return (
     <Card
       variant="outlined"
       sx={{
         borderRadius: 1.5,
-        bgcolor: 'rgba(255, 255, 255, 0.04)',
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        bgcolor: isLightMode ? 'rgba(255, 255, 255, 0.82)' : 'rgba(255, 255, 255, 0.04)',
+        borderColor: isLightMode ? 'rgba(203, 213, 225, 0.92)' : 'rgba(255, 255, 255, 0.1)',
+        boxShadow: isLightMode ? '0 10px 24px rgba(15,23,42,0.04)' : 'none',
       }}
     >
       <CardContent sx={{ p: 1.35, '&:last-child': { pb: 1.35 } }}>
@@ -85,19 +86,19 @@ function SectionCard({ icon, title, subtitle, children }) {
                   borderRadius: 1,
                   display: 'grid',
                   placeItems: 'center',
-                  bgcolor: 'rgba(16, 185, 129, 0.12)',
-                  color: '#9AF0C1',
+                  bgcolor: isLightMode ? 'rgba(220, 252, 231, 0.86)' : 'rgba(16, 185, 129, 0.12)',
+                  color: isLightMode ? '#166534' : '#9AF0C1',
                   flexShrink: 0,
                 }}
               >
                 {icon}
               </Box>
-              <Typography variant="subtitle2" sx={{ color: '#F8FAFC', fontWeight: 800 }}>
+              <Typography variant="subtitle2" sx={{ color: isLightMode ? '#0f172a' : '#F8FAFC', fontWeight: 800 }}>
                 {title}
               </Typography>
             </Stack>
             {subtitle ? (
-              <Typography variant="body2" sx={{ color: 'rgba(203, 213, 225, 0.72)' }}>
+              <Typography variant="body2" sx={{ color: isLightMode ? '#64748b' : 'rgba(203, 213, 225, 0.72)' }}>
                 {subtitle}
               </Typography>
             ) : null}
@@ -115,6 +116,8 @@ export default function DeviceDetailDrawer({
   device,
   hierarchyPath,
 }) {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
   const hasCoordinates = hasValue(device?.latitude) || hasValue(device?.longitude);
   const hasLocalPosition = hasValue(device?.local_x) || hasValue(device?.local_y);
   const hasMapLabel = hasValue(device?.map_label);
@@ -135,7 +138,7 @@ export default function DeviceDetailDrawer({
           sx={{
             position: 'absolute',
             inset: 0,
-            bgcolor: 'rgba(2, 6, 23, 0.18)',
+            bgcolor: isLightMode ? 'rgba(15, 23, 42, 0.12)' : 'rgba(2, 6, 23, 0.18)',
           }}
         />
 
@@ -155,9 +158,9 @@ export default function DeviceDetailDrawer({
             maxHeight: '100dvh',
             display: 'flex',
             flexDirection: 'column',
-            bgcolor: '#07110F',
-            borderLeft: '1px solid rgba(148, 163, 184, 0.2)',
-            boxShadow: '0 20px 54px rgba(0, 0, 0, 0.34)',
+            bgcolor: isLightMode ? '#f8fbf8' : '#07110F',
+            borderLeft: isLightMode ? '1px solid rgba(203, 213, 225, 0.95)' : '1px solid rgba(148, 163, 184, 0.2)',
+            boxShadow: isLightMode ? '0 18px 44px rgba(15, 23, 42, 0.16)' : '0 20px 54px rgba(0, 0, 0, 0.34)',
             overflow: 'hidden',
             pointerEvents: 'auto',
             transform: open ? 'translateX(0)' : 'translateX(100%)',
@@ -169,8 +172,10 @@ export default function DeviceDetailDrawer({
             sx={{
               px: { xs: 1.5, sm: 1.75 },
               py: { xs: 1.15, sm: 1.35 },
-              background: 'linear-gradient(160deg, rgba(21, 128, 61, 0.2), rgba(6, 15, 13, 0.98))',
-              borderBottom: '1px solid rgba(148, 163, 184, 0.16)',
+              background: isLightMode
+                ? 'linear-gradient(160deg, rgba(220,252,231,0.88), rgba(255,255,255,0.98))'
+                : 'linear-gradient(160deg, rgba(21, 128, 61, 0.2), rgba(6, 15, 13, 0.98))',
+              borderBottom: isLightMode ? '1px solid rgba(226, 232, 240, 0.92)' : '1px solid rgba(148, 163, 184, 0.16)',
               flexShrink: 0,
             }}
           >
@@ -179,14 +184,14 @@ export default function DeviceDetailDrawer({
                 <Stack spacing={0.45} sx={{ minWidth: 0 }}>
                   <Typography
                     variant="overline"
-                    sx={{ color: '#86EFAC', lineHeight: 1.1, letterSpacing: 1.4 }}
+                    sx={{ color: isLightMode ? '#166534' : '#86EFAC', lineHeight: 1.1, letterSpacing: 1.4 }}
                   >
                     Device details
                   </Typography>
                   <Typography
                     variant="h5"
                     sx={{
-                      color: '#F8FAFC',
+                      color: isLightMode ? '#0f172a' : '#F8FAFC',
                       fontWeight: 850,
                       letterSpacing: '-0.03em',
                       overflowWrap: 'anywhere',
@@ -196,38 +201,32 @@ export default function DeviceDetailDrawer({
                   </Typography>
                   <Typography
                     variant="body2"
-                    sx={{ color: 'rgba(203, 213, 225, 0.78)', overflowWrap: 'anywhere' }}
+                    sx={{ color: isLightMode ? '#64748b' : 'rgba(203, 213, 225, 0.78)', overflowWrap: 'anywhere' }}
                   >
                     {device?.identifier || 'No identifier'}
                   </Typography>
                 </Stack>
-                <IconButton
+                <DrawerCloseButton
                   onClick={onClose}
                   aria-label="Close device details"
-                  sx={{
-                    color: '#E2E8F0',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    bgcolor: 'rgba(255, 255, 255, 0.04)',
-                    '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.08)',
-                    },
-                  }}
-                >
-                  <CloseRoundedIcon />
-                </IconButton>
+                />
               </Stack>
 
               <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
                 <Chip
                   size="small"
                   label={`Line ${device?.line_name || device?.line || 'N/A'}`}
-                  sx={{ borderColor: 'rgba(134, 239, 172, 0.32)', color: '#BBF7D0' }}
+                  sx={isLightMode
+                    ? { borderColor: 'rgba(34,197,94,0.22)', bgcolor: 'rgba(220,252,231,0.78)', color: '#166534' }
+                    : { borderColor: 'rgba(134, 239, 172, 0.32)', color: '#BBF7D0' }}
                   variant="outlined"
                 />
                 <Chip
                   size="small"
                   label={`Zone ${device?.zone_name || device?.zone || 'N/A'}`}
-                  sx={{ borderColor: 'rgba(148, 163, 184, 0.28)', color: '#CBD5E1' }}
+                  sx={isLightMode
+                    ? { borderColor: 'rgba(203,213,225,0.95)', bgcolor: 'rgba(255,255,255,0.82)', color: '#475569' }
+                    : { borderColor: 'rgba(148, 163, 184, 0.28)', color: '#CBD5E1' }}
                   variant="outlined"
                 />
               </Stack>
@@ -240,7 +239,7 @@ export default function DeviceDetailDrawer({
               minHeight: 0,
               overflowY: 'auto',
               p: { xs: 1.25, sm: 1.5 },
-              bgcolor: '#050A09',
+              bgcolor: isLightMode ? '#f1f6f2' : '#050A09',
             }}
           >
             <Stack spacing={1.25}>
@@ -248,13 +247,14 @@ export default function DeviceDetailDrawer({
                 icon={<DeviceHubRoundedIcon fontSize="small" />}
                 title="Device"
                 subtitle="Registry identity and descriptive fields."
+                isLightMode={isLightMode}
               >
                 <Stack spacing={1.05}>
-                  <DetailRow label="Device name" value={device?.name} />
-                  <DetailRow label="Identifier" value={device?.identifier} />
-                  <DetailRow label="Description" value={device?.description} />
-                  <DetailRow label="Created at" value={formatDateTime(device?.created_at)} />
-                  <DetailRow label="Updated at" value={formatDateTime(device?.updated_at)} />
+                  <DetailRow label="Device name" value={device?.name} isLightMode={isLightMode} />
+                  <DetailRow label="Identifier" value={device?.identifier} isLightMode={isLightMode} />
+                  <DetailRow label="Description" value={device?.description} isLightMode={isLightMode} />
+                  <DetailRow label="Created at" value={formatDateTime(device?.created_at)} isLightMode={isLightMode} />
+                  <DetailRow label="Updated at" value={formatDateTime(device?.updated_at)} isLightMode={isLightMode} />
                 </Stack>
               </SectionCard>
 
@@ -262,12 +262,13 @@ export default function DeviceDetailDrawer({
                 icon={<RouteRoundedIcon fontSize="small" />}
                 title="Hierarchy"
                 subtitle="Site to greenhouse to zone to line placement."
+                isLightMode={isLightMode}
               >
                 <Stack spacing={1.05}>
-                  <DetailRow label="Site" value={hierarchyPath?.siteName || device?.site_name} />
-                  <DetailRow label="Greenhouse" value={hierarchyPath?.greenhouseName || device?.greenhouse_name} />
-                  <DetailRow label="Zone" value={hierarchyPath?.zoneName || device?.zone_name} />
-                  <DetailRow label="Line" value={hierarchyPath?.lineName || device?.line_name} />
+                  <DetailRow label="Site" value={hierarchyPath?.siteName || device?.site_name} isLightMode={isLightMode} />
+                  <DetailRow label="Greenhouse" value={hierarchyPath?.greenhouseName || device?.greenhouse_name} isLightMode={isLightMode} />
+                  <DetailRow label="Zone" value={hierarchyPath?.zoneName || device?.zone_name} isLightMode={isLightMode} />
+                  <DetailRow label="Line" value={hierarchyPath?.lineName || device?.line_name} isLightMode={isLightMode} />
                 </Stack>
               </SectionCard>
 
@@ -276,30 +277,32 @@ export default function DeviceDetailDrawer({
                   icon={<MyLocationRoundedIcon fontSize="small" />}
                   title="Map Position"
                   subtitle="Optional Phase 6 map foundation fields."
+                  isLightMode={isLightMode}
                 >
                   <Stack spacing={1.05}>
-                    <DetailRow label="Latitude" value={device?.latitude} />
-                    <DetailRow label="Longitude" value={device?.longitude} />
-                    <DetailRow label="Local X" value={device?.local_x} />
-                    <DetailRow label="Local Y" value={device?.local_y} />
-                    <DetailRow label="Map label" value={device?.map_label} />
+                    <DetailRow label="Latitude" value={device?.latitude} isLightMode={isLightMode} />
+                    <DetailRow label="Longitude" value={device?.longitude} isLightMode={isLightMode} />
+                    <DetailRow label="Local X" value={device?.local_x} isLightMode={isLightMode} />
+                    <DetailRow label="Local Y" value={device?.local_y} isLightMode={isLightMode} />
+                    <DetailRow label="Map label" value={device?.map_label} isLightMode={isLightMode} />
                   </Stack>
                 </SectionCard>
               ) : null}
 
-              <Divider sx={{ borderColor: 'rgba(148, 163, 184, 0.14)' }} />
+              <Divider sx={{ borderColor: isLightMode ? 'rgba(226, 232, 240, 0.92)' : 'rgba(148, 163, 184, 0.14)' }} />
 
               <SectionCard
                 icon={<DeviceHubRoundedIcon fontSize="small" />}
                 title="References"
                 subtitle="Backend identifiers for this row."
+                isLightMode={isLightMode}
               >
                 <Stack spacing={1.05}>
-                  <DetailRow label="Device ID" value={device?.id} />
-                  <DetailRow label="Site ID" value={device?.site} />
-                  <DetailRow label="Greenhouse ID" value={device?.greenhouse} />
-                  <DetailRow label="Zone ID" value={device?.zone} />
-                  <DetailRow label="Line ID" value={device?.line} />
+                  <DetailRow label="Device ID" value={device?.id} isLightMode={isLightMode} />
+                  <DetailRow label="Site ID" value={device?.site} isLightMode={isLightMode} />
+                  <DetailRow label="Greenhouse ID" value={device?.greenhouse} isLightMode={isLightMode} />
+                  <DetailRow label="Zone ID" value={device?.zone} isLightMode={isLightMode} />
+                  <DetailRow label="Line ID" value={device?.line} isLightMode={isLightMode} />
                 </Stack>
               </SectionCard>
             </Stack>

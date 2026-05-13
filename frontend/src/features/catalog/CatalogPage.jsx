@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Add as AddIcon } from '@mui/icons-material';
 import {
   Alert,
   Button,
@@ -108,15 +109,40 @@ export default function CatalogPage() {
     <>
       <Stack spacing={1.75}>
         <PageHeader
-          eyebrow="Knowledge Base"
           title="Catalog"
-          subtitle="Real paginated disease catalog from the backend, including nested causes, treatments, and resources."
           actions={isAdmin ? (
             <Button
               variant="contained"
+              size="small"
+              startIcon={<AddIcon fontSize="small" />}
               onClick={() => {
                 setCreateDialogSession((currentValue) => currentValue + 1);
                 setIsCreateDialogOpen(true);
+              }}
+              sx={{
+                minHeight: 30,
+                minWidth: 'fit-content',
+                px: 1.2,
+                borderRadius: 1.5,
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                lineHeight: 1,
+                letterSpacing: '0.01em',
+                textTransform: 'none',
+                boxShadow: 'none',
+                bgcolor: '#1D6B43',
+                border: '1px solid rgba(187, 247, 208, 0.14)',
+                '& .MuiButton-startIcon': {
+                  mr: 0.55,
+                  ml: 0,
+                },
+                '& .MuiSvgIcon-root': {
+                  fontSize: '0.95rem',
+                },
+                '&:hover': {
+                  bgcolor: '#185838',
+                  boxShadow: 'none',
+                },
               }}
             >
               Add disease

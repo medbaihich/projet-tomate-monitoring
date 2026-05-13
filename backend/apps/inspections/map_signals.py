@@ -14,6 +14,8 @@ from apps.inspections.models import Inspection
 HEALTHY_DISEASE_KEY = "healthy"
 HIGH_SEVERITY_THRESHOLD = 0.85
 RADIUS_REASON = "Configured from the active disease map profile as approximate visualization/risk guidance."
+BOOLEAN_TRUE_VALUES = {"1", "true", "yes", "on"}
+BOOLEAN_FALSE_VALUES = {"0", "false", "no", "off"}
 
 
 def build_dashboard_map_signals(query_params):
@@ -21,6 +23,12 @@ def build_dashboard_map_signals(query_params):
     queryset = _apply_filters(queryset, query_params)
 
     inspections = list(queryset)
+    latest_per_device = _parse_boolean_param(
+        query_params.get("latest_per_device"),
+        "latest_per_device",
+    )
+    if latest_per_device:
+        inspections = _select_latest_inspections_per_device(inspections)
     disease_options = _build_available_diseases(inspections)
     signal_candidates = [_inspection_to_signal_candidate(inspection) for inspection in inspections]
     mapped_signal_candidates = [
@@ -42,6 +50,32 @@ def build_dashboard_map_signals(query_params):
             "infection_zone_count": len(infection_zones),
         },
     }
+
+
+def _parse_boolean_param(value, field_name):
+    if value in (None, ""):
+        return False
+
+    if isinstance(value, bool):
+        return value
+
+    normalized_value = str(value).strip().lower()
+    if normalized_value in BOOLEAN_TRUE_VALUES:
+        return True
+
+    if normalized_value in BOOLEAN_FALSE_VALUES:
+        return False
+
+    raise ValidationError({field_name: "Must be a boolean value."})
+
+
+def _select_latest_inspections_per_device(inspections):
+    latest_by_device_id = {}
+
+    for inspection in inspections:
+        latest_by_device_id.setdefault(inspection.device_id, inspection)
+
+    return list(latest_by_device_id.values())
 
 
 def _base_queryset():

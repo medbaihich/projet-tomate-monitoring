@@ -1,4 +1,5 @@
 import { Box, Button, Stack, Typography } from '@mui/material';
+import { useThemeMode } from '@/theme-mode-context';
 
 export default function StateBlock({
   title,
@@ -7,6 +8,9 @@ export default function StateBlock({
   onAction,
   minHeight = 170,
 }) {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
+
   return (
     <Box
       sx={{
@@ -15,9 +19,10 @@ export default function StateBlock({
         justifyContent: 'center',
         minHeight,
         border: '1px dashed',
-        borderColor: 'divider',
+        borderColor: isLightMode ? 'rgba(203,213,225,0.95)' : 'divider',
         borderRadius: 1.25,
-        bgcolor: 'background.default',
+        bgcolor: isLightMode ? 'rgba(255,255,255,0.72)' : 'background.default',
+        boxShadow: isLightMode ? '0 10px 24px rgba(15,23,42,0.04)' : 'none',
         px: 1.5,
         py: 2,
       }}

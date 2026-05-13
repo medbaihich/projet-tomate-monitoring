@@ -311,9 +311,7 @@ export default function InspectionsPage() {
     <>
       <Stack spacing={1.75}>
         <PageHeader
-          eyebrow="Operations"
           title="Inspections"
-          subtitle="Browse inspection records from the inspections API and inspect the operational details of the selected record."
         />
 
         <PanelCard

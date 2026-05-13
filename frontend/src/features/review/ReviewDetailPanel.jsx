@@ -25,6 +25,7 @@ import {
   resolveReviewDecisionTone,
   resolveReviewerLabel,
 } from '@/features/review/utils';
+import { useThemeMode } from '@/theme-mode-context';
 
 const DECISION_OPTIONS = [
   { value: 'accepted', label: 'accepted' },
@@ -54,6 +55,8 @@ export default function ReviewDetailPanel({
   submitError,
   isSubmittedState = false,
 }) {
+  const { mode: themeMode } = useThemeMode();
+  const isLightMode = themeMode === 'light';
   const [decision, setDecision] = useState('accepted');
   const [correctedDisease, setCorrectedDisease] = useState('');
   const [comments, setComments] = useState('');
@@ -76,7 +79,15 @@ export default function ReviewDetailPanel({
 
   if (!inspection) {
     return (
-      <Card sx={{ height: '100%', bgcolor: 'background.paper' }}>
+      <Card
+        sx={{
+          height: '100%',
+          bgcolor: 'background.paper',
+          border: '1px solid',
+          borderColor: isLightMode ? 'rgba(214,224,215,0.95)' : 'divider',
+          boxShadow: isLightMode ? '0 16px 34px rgba(22, 48, 35, 0.06)' : undefined,
+        }}
+      >
         <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 340 }}>
           <Stack spacing={1.5} sx={{ textAlign: 'center', maxWidth: 340 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
@@ -115,7 +126,18 @@ export default function ReviewDetailPanel({
   };
 
   return (
-    <Card sx={{ height: '100%', bgcolor: 'background.paper' }}>
+    <Card
+      sx={{
+        height: '100%',
+        bgcolor: 'background.paper',
+        border: '1px solid',
+        borderColor: isLightMode ? 'rgba(214,224,215,0.95)' : 'divider',
+        backgroundImage: isLightMode
+          ? 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,248,244,0.98))'
+          : 'none',
+        boxShadow: isLightMode ? '0 16px 34px rgba(22, 48, 35, 0.06)' : undefined,
+      }}
+    >
       <CardContent sx={{ p: 1.4, '&:last-child': { pb: 1.4 } }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.6}>

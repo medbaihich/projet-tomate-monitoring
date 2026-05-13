@@ -4,7 +4,6 @@ import {
   CardContent,
   Chip,
   Divider,
-  IconButton,
   Link,
   List,
   ListItem,
@@ -13,10 +12,10 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import LocalHospitalRoundedIcon from '@mui/icons-material/LocalHospitalRounded';
 import ReportProblemRoundedIcon from '@mui/icons-material/ReportProblemRounded';
+import DrawerCloseButton from '@/components/ui/DrawerCloseButton';
 import StateBlock from '@/components/ui/StateBlock';
 import StatusChip from '@/components/ui/StatusChip';
 import { formatConfidencePercentage } from '@/features/dashboard/utils';
@@ -25,6 +24,7 @@ import {
   resolveInspectionDeviceLabel,
   resolveInspectionDiseaseLabel,
 } from '@/features/inspections/utils';
+import { useThemeMode } from '@/theme-mode-context';
 
 function formatDiseaseLabel(value) {
   const trimmed = (value || '').trim();
@@ -144,6 +144,8 @@ export default function NotificationDetailDrawer({
   deviceMap,
   diseaseMap,
 }) {
+  const { mode } = useThemeMode();
+  const isLightMode = mode === 'light';
   const diseaseLabel = formatDiseaseLabel(
     disease?.name || inspection?.top1_label || notification?.display_disease_label,
   );
@@ -260,31 +262,55 @@ export default function NotificationDetailDrawer({
               <Box
                 sx={{
                   px: { xs: 1.5, sm: 1.75 },
-                  py: { xs: 1.1, sm: 1.25 },
-                  background: 'linear-gradient(160deg, rgba(183, 28, 28, 0.12), rgba(255, 235, 238, 0.96))',
+                  py: { xs: 1.15, sm: 1.35 },
+                  background: isLightMode
+                    ? 'linear-gradient(160deg, rgba(254,226,226,0.94), rgba(255,255,255,0.98))'
+                    : 'linear-gradient(160deg, rgba(220, 38, 38, 0.24), rgba(6, 15, 13, 0.98))',
                   borderBottom: '1px solid',
-                  borderColor: 'divider',
+                  borderColor: isLightMode ? 'rgba(226,232,240,0.92)' : 'rgba(148, 163, 184, 0.16)',
                   flexShrink: 0,
                 }}
               >
-                <Stack spacing={0.95}>
+                <Stack spacing={1}>
                   <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
                     <Stack spacing={0.4} sx={{ minWidth: 0 }}>
-                      <Typography variant="overline" color="error.dark" sx={{ lineHeight: 1.1 }}>
+                      <Typography
+                        variant="overline"
+                        sx={{
+                          color: isLightMode ? '#b91c1c' : '#fecaca',
+                          lineHeight: 1.1,
+                          letterSpacing: 1.4,
+                        }}
+                      >
                         Disease alert
                       </Typography>
-                      <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em' }}>
+                      <Typography
+                        variant="h5"
+                        sx={{
+                          color: isLightMode ? '#0f172a' : '#f8fafc',
+                          fontWeight: 850,
+                          letterSpacing: '-0.03em',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
                         {diseaseLabel}
                       </Typography>
                       {hasText(notification.title) ? (
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            color: isLightMode ? '#64748b' : 'rgba(203, 213, 225, 0.78)',
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
                           {notification.title}
                         </Typography>
                       ) : null}
                     </Stack>
-                    <IconButton onClick={onClose} aria-label="Close alert details">
-                      <CloseRoundedIcon />
-                    </IconButton>
+                    <DrawerCloseButton
+                      onClick={onClose}
+                      aria-label="Close alert details"
+                    />
                   </Stack>
 
                   <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">

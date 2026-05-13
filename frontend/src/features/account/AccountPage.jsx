@@ -275,9 +275,7 @@ export default function AccountPage() {
     <>
       <Stack spacing={1.75}>
         <PageHeader
-          eyebrow="Account"
           title="My Profile"
-          subtitle="View your account identity, update your personal information, and change your password without leaving the main workspace."
         />
 
         <Grid container spacing={1.75} alignItems="stretch">
