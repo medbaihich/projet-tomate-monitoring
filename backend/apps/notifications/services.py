@@ -121,7 +121,7 @@ def _broadcast_notification_by_id(notification_id):
         return
 
     notification = Notification.objects.select_related("inspection", "disease").get(pk=notification_id)
-    payload = NotificationSerializer(notification).data
+    payload = _serialize_notification_for_broadcast(notification)
 
     async_to_sync(channel_layer.group_send)(
         NOTIFICATIONS_GROUP_NAME,
@@ -130,6 +130,10 @@ def _broadcast_notification_by_id(notification_id):
             "notification": payload,
         },
     )
+
+
+def _serialize_notification_for_broadcast(notification):
+    return NotificationSerializer(notification).data
 
 
 def _safe_broadcast_notification_by_id(notification_id):

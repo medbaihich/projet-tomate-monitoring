@@ -1,5 +1,7 @@
+import json
 from datetime import timedelta
 from unittest.mock import patch
+from uuid import UUID, uuid4
 
 from django.core.management import call_command
 from django.test import TestCase
@@ -14,7 +16,31 @@ from apps.devices.models import Device
 from apps.inference.models import InferenceIndex
 from apps.inspections.models import Inspection
 from apps.notifications.models import Notification, NotificationUserState
-from apps.notifications.services import maybe_create_disease_alert_notification
+from apps.notifications.serializers import NotificationSerializer
+from apps.notifications.services import (
+    NOTIFICATIONS_GROUP_NAME,
+    maybe_create_disease_alert_notification,
+)
+
+
+def assert_json_safe_primitive(testcase, value, *, path="root"):
+    testcase.assertNotIsInstance(value, UUID, f"{path} should not contain UUID instances")
+
+    if isinstance(value, dict):
+        for key, item in value.items():
+            testcase.assertIsInstance(key, str, f"{path} keys must be strings")
+            assert_json_safe_primitive(testcase, item, path=f"{path}.{key}")
+        return
+
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            assert_json_safe_primitive(testcase, item, path=f"{path}[{index}]")
+        return
+
+    testcase.assertTrue(
+        value is None or isinstance(value, (str, int, float, bool)),
+        f"{path} is not JSON-safe: {type(value).__name__}",
+    )
 
 
 class NotificationFixtureMixin:
@@ -68,7 +94,7 @@ class NotificationFixtureMixin:
             "organ_type": organ_type,
             "status": Inspection.Status.NEW,
             "processing_status": processing_status,
-            "source_message_id": f"notification-test-{now.timestamp()}",
+            "source_message_id": f"notification-test-{now.timestamp()}-{uuid4().hex}",
             "top1_label": top1_label,
             "confidence_score": 0.91,
             "captured_at": now.isoformat(),
@@ -104,7 +130,7 @@ class NotificationFixtureMixin:
             organ_type=organ_type,
             status=Inspection.Status.NEW,
             processing_status=processing_status,
-            source_message_id=f"service-notification-test-{now.timestamp()}",
+            source_message_id=f"service-notification-test-{now.timestamp()}-{uuid4().hex}",
             top1_label=top1_label,
             confidence_score=0.91,
             captured_at=now,
@@ -217,6 +243,13 @@ class NotificationInspectionTriggerTests(NotificationFixtureMixin, APITestCase):
 
 
 class NotificationServiceTests(NotificationFixtureMixin, TestCase):
+    class CaptureChannelLayer:
+        def __init__(self):
+            self.sent_messages = []
+
+        async def group_send(self, group, message):
+            self.sent_messages.append((group, message))
+
     def test_persists_before_broadcast_callback_runs(self):
         inspection = self.create_inspection_model(
             predicted_disease=self.early_blight,
@@ -252,6 +285,53 @@ class NotificationServiceTests(NotificationFixtureMixin, TestCase):
         self.assertFalse(second_created)
         self.assertEqual(first_notification.id, second_notification.id)
         self.assertEqual(Notification.objects.count(), 1)
+
+    def test_notification_serializer_representation_is_json_safe(self):
+        notification = Notification.objects.create(
+            inspection=self.create_inspection_model(
+                predicted_disease=self.early_blight,
+                top1_label=self.early_blight.name,
+            ),
+            disease=self.early_blight,
+            event_type=Notification.EventType.DISEASE_ALERT,
+            severity=Notification.Severity.HIGH,
+            title="Disease alert detected",
+            message="A disease-positive inspection was detected.",
+            display_disease_label=self.early_blight.name,
+            confidence_score=0.91,
+            payload={"device_identifier": self.device.identifier},
+        )
+
+        serialized = NotificationSerializer(notification).data
+
+        self.assertEqual(serialized["id"], str(notification.id))
+        self.assertEqual(serialized["inspection"], str(notification.inspection_id))
+        self.assertEqual(serialized["disease"], str(notification.disease_id))
+        assert_json_safe_primitive(self, serialized)
+        json.dumps(serialized)
+
+    def test_disease_positive_notification_broadcast_payload_is_json_safe(self):
+        inspection = self.create_inspection_model(
+            predicted_disease=self.early_blight,
+            top1_label=self.early_blight.name,
+        )
+        channel_layer = self.CaptureChannelLayer()
+
+        with patch("apps.notifications.services.transaction.on_commit", side_effect=lambda callback: callback()):
+            with patch("apps.notifications.services.get_channel_layer", return_value=channel_layer):
+                notification, created = maybe_create_disease_alert_notification(inspection)
+
+        self.assertTrue(created)
+        self.assertEqual(len(channel_layer.sent_messages), 1)
+
+        group_name, event = channel_layer.sent_messages[0]
+        self.assertEqual(group_name, NOTIFICATIONS_GROUP_NAME)
+        self.assertEqual(event["type"], "notification.created")
+        self.assertEqual(event["notification"]["id"], str(notification.id))
+        self.assertEqual(event["notification"]["inspection"], str(notification.inspection_id))
+        self.assertEqual(event["notification"]["disease"], str(notification.disease_id))
+        assert_json_safe_primitive(self, event)
+        json.dumps(event)
 
 
 class NotificationApiTests(NotificationFixtureMixin, APITestCase):

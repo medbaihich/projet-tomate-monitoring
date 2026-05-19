@@ -1,6 +1,28 @@
+from datetime import date, datetime, time
+from uuid import UUID
+
 from rest_framework import serializers
 
 from apps.notifications.models import Notification
+
+
+def _to_json_safe_primitive(value):
+    if isinstance(value, UUID):
+        return str(value)
+
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+
+    if isinstance(value, dict):
+        return {
+            key: _to_json_safe_primitive(item)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, (list, tuple)):
+        return [_to_json_safe_primitive(item) for item in value]
+
+    return value
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -38,3 +60,6 @@ class NotificationSerializer(serializers.ModelSerializer):
             return obj.current_user_read_at
 
         return None
+
+    def to_representation(self, instance):
+        return _to_json_safe_primitive(super().to_representation(instance))
