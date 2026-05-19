@@ -7,6 +7,8 @@ import {
   isValidConfidenceScore,
 } from '@/features/dashboard/utils';
 
+export const DASHBOARD_OPERATIONS_QUERY_KEY = ['dashboard-operations'];
+
 async function fetchPage(url, params = {}) {
   const { data } = await axiosClient.get(url, { params });
   return data;

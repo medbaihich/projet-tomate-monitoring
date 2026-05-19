@@ -13,7 +13,11 @@ import {
   RefreshCcw,
   ShieldAlert,
 } from 'lucide-react';
-import { fetchDashboardData, fetchDashboardReferenceData } from '@/features/dashboard/api';
+import {
+  DASHBOARD_OPERATIONS_QUERY_KEY,
+  fetchDashboardData,
+  fetchDashboardReferenceData,
+} from '@/features/dashboard/api';
 import {
   ActivityLineChart,
   DistributionBars,
@@ -43,7 +47,10 @@ import DashboardStatusBadge from '@/features/dashboard/components/DashboardStatu
 import PendingReviewsDrawer from '@/features/dashboard/PendingReviewsDrawer';
 import { Button } from '@/components/ui/button';
 import MapFoundation from '@/features/map/MapFoundation';
-import { DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY } from '@/features/map/api';
+import {
+  DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY,
+  MAP_DEVICES_QUERY_KEY,
+} from '@/features/map/api';
 import {
   fetchNotificationsPage,
   fetchUnreadNotificationsCount,
@@ -59,6 +66,12 @@ const NOTIFICATIONS_QUERY_KEY = ['dashboard-notifications'];
 const UNREAD_COUNT_QUERY_KEY = ['dashboard-notifications-unread-count'];
 const DASHBOARD_REFERENCE_QUERY_KEY = ['dashboard-reference-data'];
 const DASHBOARD_MAP_REFRESH_DEBOUNCE_MS = 1500;
+const DASHBOARD_OPERATIONS_REFRESH_DEBOUNCE_MS = 900;
+const DEVICE_DASHBOARD_REFRESH_REASONS = new Set([
+  'device.created',
+  'device.updated',
+  'device.deleted',
+]);
 const CONFIDENCE_BUCKET_LABELS = {
   reviewable: '\u2264 50%',
   watch: `51\u201369%`,
@@ -102,6 +115,21 @@ function updateNotificationInPage(previousData, updatedNotification) {
       notification.id === updatedNotification.id ? updatedNotification : notification
     )),
   };
+}
+
+function invalidateDashboardDiseaseMapQueries(queryClient) {
+  queryClient.invalidateQueries({
+    predicate: (query) => {
+      const queryKey = query.queryKey;
+      return (
+        Array.isArray(queryKey)
+        && queryKey[0] === DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY[0]
+        && queryKey[1] === DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY[1]
+        && queryKey[2] === DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY[2]
+        && !queryKey.includes('filter-options')
+      );
+    },
+  });
 }
 
 function normalizeLabel(value) {
@@ -422,7 +450,7 @@ export default function DashboardPage() {
     dataUpdatedAt,
     isFetching,
   } = useQuery({
-    queryKey: ['dashboard-operations'],
+    queryKey: DASHBOARD_OPERATIONS_QUERY_KEY,
     queryFn: fetchDashboardData,
     placeholderData: (previousData) => previousData,
   });
@@ -483,6 +511,8 @@ export default function DashboardPage() {
     let socket;
     let reconnectTimeoutId;
     let dashboardMapRefreshTimeoutId;
+    let dashboardOperationsRefreshTimeoutId;
+    let dashboardDeviceRefreshTimeoutId;
     let reconnectAttempts = 0;
     let isDisposed = false;
 
@@ -500,6 +530,32 @@ export default function DashboardPage() {
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
+
+          if (payload?.type === 'dashboard.refresh') {
+            if (!dashboardOperationsRefreshTimeoutId) {
+              dashboardOperationsRefreshTimeoutId = window.setTimeout(() => {
+                dashboardOperationsRefreshTimeoutId = null;
+                queryClient.invalidateQueries({
+                  queryKey: DASHBOARD_OPERATIONS_QUERY_KEY,
+                });
+              }, DASHBOARD_OPERATIONS_REFRESH_DEBOUNCE_MS);
+            }
+
+            if (DEVICE_DASHBOARD_REFRESH_REASONS.has(payload.reason) && !dashboardDeviceRefreshTimeoutId) {
+              dashboardDeviceRefreshTimeoutId = window.setTimeout(() => {
+                dashboardDeviceRefreshTimeoutId = null;
+                queryClient.invalidateQueries({
+                  queryKey: DASHBOARD_REFERENCE_QUERY_KEY,
+                });
+                queryClient.invalidateQueries({
+                  queryKey: MAP_DEVICES_QUERY_KEY,
+                });
+                invalidateDashboardDiseaseMapQueries(queryClient);
+              }, DASHBOARD_MAP_REFRESH_DEBOUNCE_MS);
+            }
+            return;
+          }
+
           if (payload?.type !== 'notification.created' || !payload.notification) {
             return;
           }
@@ -525,18 +581,7 @@ export default function DashboardPage() {
           if (!dashboardMapRefreshTimeoutId) {
             dashboardMapRefreshTimeoutId = window.setTimeout(() => {
               dashboardMapRefreshTimeoutId = null;
-              queryClient.invalidateQueries({
-                predicate: (query) => {
-                  const queryKey = query.queryKey;
-                  return (
-                    Array.isArray(queryKey)
-                    && queryKey[0] === DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY[0]
-                    && queryKey[1] === DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY[1]
-                    && queryKey[2] === DASHBOARD_DISEASE_MAP_SIGNALS_QUERY_KEY[2]
-                    && !queryKey.includes('filter-options')
-                  );
-                },
-              });
+              invalidateDashboardDiseaseMapQueries(queryClient);
             }, DASHBOARD_MAP_REFRESH_DEBOUNCE_MS);
           }
         } catch {
@@ -570,6 +615,12 @@ export default function DashboardPage() {
       }
       if (dashboardMapRefreshTimeoutId) {
         window.clearTimeout(dashboardMapRefreshTimeoutId);
+      }
+      if (dashboardOperationsRefreshTimeoutId) {
+        window.clearTimeout(dashboardOperationsRefreshTimeoutId);
+      }
+      if (dashboardDeviceRefreshTimeoutId) {
+        window.clearTimeout(dashboardDeviceRefreshTimeoutId);
       }
 
       if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {

@@ -61,6 +61,12 @@ def maybe_create_disease_alert_notification(inspection):
     return notification, created
 
 
+def schedule_dashboard_refresh_event(reason):
+    transaction.on_commit(
+        lambda refresh_reason=reason: _safe_broadcast_dashboard_refresh(refresh_reason)
+    )
+
+
 def _is_healthy_subject(disease, display_label):
     if disease is not None:
         disease_name = (disease.name or "").strip().lower()
@@ -123,11 +129,31 @@ def _broadcast_notification_by_id(notification_id):
     notification = Notification.objects.select_related("inspection", "disease").get(pk=notification_id)
     payload = _serialize_notification_for_broadcast(notification)
 
+    _broadcast_group_event(
+        channel_layer,
+        event_type="notification.created",
+        notification=payload,
+    )
+
+
+def _broadcast_dashboard_refresh(reason):
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+
+    _broadcast_group_event(
+        channel_layer,
+        event_type="dashboard.refresh",
+        reason=reason,
+    )
+
+
+def _broadcast_group_event(channel_layer, *, event_type, **payload):
     async_to_sync(channel_layer.group_send)(
         NOTIFICATIONS_GROUP_NAME,
         {
-            "type": "notification.created",
-            "notification": payload,
+            "type": event_type,
+            **payload,
         },
     )
 
@@ -143,4 +169,14 @@ def _safe_broadcast_notification_by_id(notification_id):
         logger.exception(
             "Notification websocket broadcast failed for notification_id=%s",
             notification_id,
+        )
+
+
+def _safe_broadcast_dashboard_refresh(reason):
+    try:
+        _broadcast_dashboard_refresh(reason)
+    except Exception:
+        logger.exception(
+            "Dashboard refresh websocket broadcast failed for reason=%s",
+            reason,
         )

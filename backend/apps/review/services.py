@@ -5,6 +5,7 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.catalog.models import Disease
 from apps.inspections.models import Inspection
+from apps.notifications.services import schedule_dashboard_refresh_event
 from apps.review.models import Review
 
 
@@ -39,6 +40,7 @@ def create_review(*, review_data, default_reviewer=None):
             decision=review.decision,
             corrected_disease=corrected_disease,
         )
+        schedule_dashboard_refresh_event("review.created")
 
     return (
         Review.objects.select_related(

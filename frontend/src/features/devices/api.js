@@ -92,3 +92,12 @@ export async function createDevice(payload) {
   const { data } = await axiosClient.post('/api/v1/devices/devices/', payload);
   return data;
 }
+
+export async function updateDevice({ id, ...payload }) {
+  const { data } = await axiosClient.patch(`/api/v1/devices/devices/${id}/`, payload);
+  return data;
+}
+
+export async function deleteDevice(deviceId) {
+  await axiosClient.delete(`/api/v1/devices/devices/${deviceId}/`);
+}

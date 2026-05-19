@@ -14,6 +14,7 @@ import FmdBadRoundedIcon from '@mui/icons-material/FmdBadRounded';
 import HealingRoundedIcon from '@mui/icons-material/HealingRounded';
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 import DrawerCloseButton from '@/components/ui/DrawerCloseButton';
+import DiseaseMapProfilePreview from '@/features/catalog/DiseaseMapProfilePreview';
 import { useThemeMode } from '@/theme-mode-context';
 
 function hasValue(value) {
@@ -284,27 +285,14 @@ export default function CatalogDiseaseDetailDrawer({
             }}
           >
             <Stack spacing={1.25}>
-              <SectionCard
-                icon={<BiotechRoundedIcon fontSize="small" />}
-                title="Disease"
-                subtitle="Core catalog identity and descriptive fields."
+              <DiseaseMapProfilePreview
+                disease={disease}
                 isLightMode={isLightMode}
-              >
-                <Stack spacing={1.05}>
-                  <DetailRow label="Name" value={disease?.name} isLightMode={isLightMode} />
-                  <DetailRow label="Slug" value={disease?.slug} isLightMode={isLightMode} />
-                  <DetailRow label="Organ type" value={formatLabel(disease?.organ_type)} isLightMode={isLightMode} />
-                  <DetailRow label="AI label" value={disease?.ai_label} isLightMode={isLightMode} />
-                  <DetailRow label="Summary" value={disease?.summary} isLightMode={isLightMode} />
-                  <DetailRow label="Symptoms" value={disease?.symptoms} isLightMode={isLightMode} />
-                  <DetailRow label="Prevention" value={disease?.prevention} isLightMode={isLightMode} />
-                </Stack>
-              </SectionCard>
+              />
 
               <SectionCard
                 icon={<FmdBadRoundedIcon fontSize="small" />}
                 title="Map Profile"
-                subtitle="Database-backed disease spread and risk metadata."
                 isLightMode={isLightMode}
               >
                 {profile ? (
@@ -351,6 +339,23 @@ export default function CatalogDiseaseDetailDrawer({
                     No map profile configured.
                   </Typography>
                 )}
+              </SectionCard>
+
+              <SectionCard
+                icon={<BiotechRoundedIcon fontSize="small" />}
+                title="Disease"
+                subtitle="Core catalog identity and descriptive fields."
+                isLightMode={isLightMode}
+              >
+                <Stack spacing={1.05}>
+                  <DetailRow label="Name" value={disease?.name} isLightMode={isLightMode} />
+                  <DetailRow label="Slug" value={disease?.slug} isLightMode={isLightMode} />
+                  <DetailRow label="Organ type" value={formatLabel(disease?.organ_type)} isLightMode={isLightMode} />
+                  <DetailRow label="AI label" value={disease?.ai_label} isLightMode={isLightMode} />
+                  <DetailRow label="Summary" value={disease?.summary} isLightMode={isLightMode} />
+                  <DetailRow label="Symptoms" value={disease?.symptoms} isLightMode={isLightMode} />
+                  <DetailRow label="Prevention" value={disease?.prevention} isLightMode={isLightMode} />
+                </Stack>
               </SectionCard>
 
               <SectionCard

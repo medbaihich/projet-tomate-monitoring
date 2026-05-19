@@ -1,6 +1,8 @@
 from django.db.models import Q
+from django.db.models.deletion import ProtectedError
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 
 from apps.accounts.permissions import IsAuthenticatedReadOnlyOrAdminWrite
@@ -14,6 +16,13 @@ from apps.devices.serializers import (
     SiteSerializer,
     ZoneSerializer,
 )
+from apps.notifications.services import schedule_dashboard_refresh_event
+
+
+class DeviceProtectedDeleteError(APIException):
+    status_code = 409
+    default_detail = "This device cannot be deleted because it has recorded inspections."
+    default_code = "device_has_recorded_inspections"
 
 
 class SiteViewSet(viewsets.ModelViewSet):
@@ -127,6 +136,21 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 "identifier": "identifier",
             },
         )
+
+    def perform_create(self, serializer):
+        serializer.save()
+        schedule_dashboard_refresh_event("device.created")
+
+    def perform_update(self, serializer):
+        serializer.save()
+        schedule_dashboard_refresh_event("device.updated")
+
+    def perform_destroy(self, instance):
+        try:
+            instance.delete()
+        except ProtectedError as exc:
+            raise DeviceProtectedDeleteError() from exc
+        schedule_dashboard_refresh_event("device.deleted")
 
     @action(detail=False, methods=["get"], url_path="map")
     def map(self, request):

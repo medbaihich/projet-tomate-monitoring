@@ -13,24 +13,41 @@ import {
   Typography,
 } from '@mui/material';
 import { useThemeMode } from '@/theme-mode-context';
-import { resolveErrorMessage, toFieldErrorMap } from '@/features/devices/deviceFormUtils';
+import {
+  resolveErrorMessage,
+  toFieldErrorMap,
+  toOptionalNumber,
+} from '@/features/devices/deviceFormUtils';
 
-export default function CreateDeviceDialog({
+function toEditableString(value) {
+  return value === null || value === undefined ? '' : String(value);
+}
+
+function buildFormState(device, fallbackLineId) {
+  return {
+    line: device?.line || fallbackLineId || '',
+    name: device?.name || '',
+    identifier: device?.identifier || '',
+    description: device?.description || '',
+    latitude: toEditableString(device?.latitude),
+    longitude: toEditableString(device?.longitude),
+    local_x: toEditableString(device?.local_x),
+    local_y: toEditableString(device?.local_y),
+    map_label: device?.map_label || '',
+  };
+}
+
+export default function EditDeviceDialog({
   open,
+  device,
   onClose,
   onSubmit,
   isSubmitting,
   lines,
-  initialLineId,
 }) {
   const { mode } = useThemeMode();
   const isLightMode = mode === 'light';
-  const [form, setForm] = useState({
-    line: initialLineId || lines[0]?.id || '',
-    name: '',
-    identifier: '',
-    description: '',
-  });
+  const [form, setForm] = useState(() => buildFormState(device, lines[0]?.id));
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState('');
 
@@ -54,14 +71,20 @@ export default function CreateDeviceDialog({
 
     try {
       await onSubmit({
+        id: device.id,
         line: form.line,
         name: form.name.trim(),
         identifier: form.identifier.trim(),
         description: form.description.trim(),
+        latitude: toOptionalNumber(form.latitude),
+        longitude: toOptionalNumber(form.longitude),
+        local_x: toOptionalNumber(form.local_x),
+        local_y: toOptionalNumber(form.local_y),
+        map_label: form.map_label.trim(),
       });
     } catch (error) {
       setErrors(toFieldErrorMap(error));
-      setNotice(resolveErrorMessage(error, 'Unable to create the device.'));
+      setNotice(resolveErrorMessage(error, 'Unable to update the device.'));
     }
   };
 
@@ -81,20 +104,14 @@ export default function CreateDeviceDialog({
           : undefined,
       }}
     >
-      <DialogTitle sx={isLightMode ? { color: '#0f172a', fontWeight: 800 } : undefined}>Create device</DialogTitle>
+      <DialogTitle sx={isLightMode ? { color: '#0f172a', fontWeight: 800 } : undefined}>Edit device</DialogTitle>
       <DialogContent dividers sx={isLightMode ? { borderColor: 'rgba(226,232,240,0.92)' } : undefined}>
-        <Stack spacing={1.5} component="form" onSubmit={handleSubmit} id="create-device-form">
+        <Stack spacing={1.5} component="form" onSubmit={handleSubmit} id="edit-device-form">
           <Typography variant="body2" color="text.secondary" sx={isLightMode ? { color: '#64748b' } : undefined}>
-            Register a new operational device directly inside Smart Eye and attach it to an existing line.
+            Update device identity, hierarchy placement, and optional map fields without leaving the registry.
           </Typography>
 
           {notice ? <Alert severity="error">{notice}</Alert> : null}
-
-          {lines.length === 0 ? (
-            <Alert severity="warning">
-              A device needs an existing line first. No lines are currently available in the loaded hierarchy.
-            </Alert>
-          ) : null}
 
           <Grid container spacing={1.25}>
             <Grid size={{ xs: 12 }}>
@@ -120,7 +137,7 @@ export default function CreateDeviceDialog({
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
-                autoFocus={lines.length > 0}
+                autoFocus
                 required
                 label="Device name"
                 name="name"
@@ -128,7 +145,7 @@ export default function CreateDeviceDialog({
                 onChange={handleChange}
                 error={Boolean(errors.name)}
                 helperText={errors.name || ' '}
-                disabled={isSubmitting || lines.length === 0}
+                disabled={isSubmitting}
               />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
@@ -141,7 +158,7 @@ export default function CreateDeviceDialog({
                 onChange={handleChange}
                 error={Boolean(errors.identifier)}
                 helperText={errors.identifier || ' '}
-                disabled={isSubmitting || lines.length === 0}
+                disabled={isSubmitting}
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
@@ -155,7 +172,75 @@ export default function CreateDeviceDialog({
                 onChange={handleChange}
                 error={Boolean(errors.description)}
                 helperText={errors.description || ' '}
-                disabled={isSubmitting || lines.length === 0}
+                disabled={isSubmitting}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Latitude"
+                name="latitude"
+                value={form.latitude}
+                onChange={handleChange}
+                error={Boolean(errors.latitude)}
+                helperText={errors.latitude || ' '}
+                disabled={isSubmitting}
+                slotProps={{ htmlInput: { step: 'any' } }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Longitude"
+                name="longitude"
+                value={form.longitude}
+                onChange={handleChange}
+                error={Boolean(errors.longitude)}
+                helperText={errors.longitude || ' '}
+                disabled={isSubmitting}
+                slotProps={{ htmlInput: { step: 'any' } }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Local X"
+                name="local_x"
+                value={form.local_x}
+                onChange={handleChange}
+                error={Boolean(errors.local_x)}
+                helperText={errors.local_x || ' '}
+                disabled={isSubmitting}
+                slotProps={{ htmlInput: { step: 'any' } }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Local Y"
+                name="local_y"
+                value={form.local_y}
+                onChange={handleChange}
+                error={Boolean(errors.local_y)}
+                helperText={errors.local_y || ' '}
+                disabled={isSubmitting}
+                slotProps={{ htmlInput: { step: 'any' } }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <TextField
+                fullWidth
+                label="Map label"
+                name="map_label"
+                value={form.map_label}
+                onChange={handleChange}
+                error={Boolean(errors.map_label)}
+                helperText={errors.map_label || ' '}
+                disabled={isSubmitting}
               />
             </Grid>
           </Grid>
@@ -167,11 +252,11 @@ export default function CreateDeviceDialog({
         </Button>
         <Button
           type="submit"
-          form="create-device-form"
+          form="edit-device-form"
           variant="contained"
-          disabled={!canSubmit || isSubmitting || lines.length === 0}
+          disabled={!canSubmit || isSubmitting}
         >
-          {isSubmitting ? 'Creating...' : 'Create device'}
+          {isSubmitting ? 'Saving...' : 'Save changes'}
         </Button>
       </DialogActions>
     </Dialog>

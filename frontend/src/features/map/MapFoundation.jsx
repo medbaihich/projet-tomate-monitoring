@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import L from 'leaflet';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { MapPinned, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -17,10 +14,17 @@ import {
   fetchMapDevices,
   MAP_DEVICES_QUERY_KEY,
 } from '@/features/map/api';
+import {
+  createDevicePopupContent,
+  deviceMarkerIcon,
+  hasGeoCoordinates,
+  isPresent,
+  TILE_ATTRIBUTION,
+  TILE_URL,
+  toValidPosition,
+} from '@/features/map/deviceMapUtils';
 
 const FILTER_SELECT_CLASS = 'h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
-const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const TILE_ATTRIBUTION = '&copy; OpenStreetMap contributors';
 const EMPTY_DEVICES = [];
 const EMPTY_DISEASE_MAP_SUMMARY = {
   total_signals: 0,
@@ -66,61 +70,6 @@ const TIME_WINDOW_OPTIONS = [
   { value: '', label: 'All', hours: null },
 ];
 const FOCUSED_SIGNAL_RADIUS_REASON = 'Focused on the latest dashboard disease alert using the DB-backed disease map profile radius.';
-const deviceMarkerIcon = L.icon({
-  iconRetinaUrl: markerIcon2x,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  tooltipAnchor: [16, -28],
-  shadowSize: [41, 41],
-});
-
-function isPresent(value) {
-  return value !== null && value !== undefined && value !== '';
-}
-
-function toCoordinate(value) {
-  if (!isPresent(value)) {
-    return null;
-  }
-
-  const coordinate = Number(value);
-  return Number.isFinite(coordinate) ? coordinate : null;
-}
-
-function hasGeoCoordinates(device) {
-  const latitude = toCoordinate(device.latitude);
-  const longitude = toCoordinate(device.longitude);
-
-  return (
-    latitude !== null
-    && longitude !== null
-    && latitude >= -90
-    && latitude <= 90
-    && longitude >= -180
-    && longitude <= 180
-  );
-}
-
-function isValidLatitude(value) {
-  const latitude = toCoordinate(value);
-  return latitude !== null && latitude >= -90 && latitude <= 90;
-}
-
-function isValidLongitude(value) {
-  const longitude = toCoordinate(value);
-  return longitude !== null && longitude >= -180 && longitude <= 180;
-}
-
-function toValidPosition(latitudeValue, longitudeValue) {
-  if (!isValidLatitude(latitudeValue) || !isValidLongitude(longitudeValue)) {
-    return null;
-  }
-
-  return [Number(latitudeValue), Number(longitudeValue)];
-}
 
 function addOption(options, id, label) {
   if (!id || options.has(id)) {
@@ -156,37 +105,6 @@ function buildHierarchyOptions(devices) {
     zoneOptions: sortOptions(zones.values()),
     lineOptions: sortOptions(lines.values()),
   };
-}
-
-function createPopupContent(device) {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'space-y-2 text-sm';
-
-  const title = document.createElement('div');
-  title.className = 'font-semibold text-slate-950';
-  title.textContent = device.map_label || device.name || 'Mapped device';
-  wrapper.appendChild(title);
-
-  const identifier = document.createElement('div');
-  identifier.className = 'font-mono text-xs text-slate-600';
-  identifier.textContent = device.identifier || 'No identifier';
-  wrapper.appendChild(identifier);
-
-  const hierarchy = document.createElement('div');
-  hierarchy.className = 'space-y-1 text-xs text-slate-700';
-  [
-    ['Site', device.site_name],
-    ['Greenhouse', device.greenhouse_name],
-    ['Zone', device.zone_name],
-    ['Line', device.line_name],
-  ].forEach(([label, value]) => {
-    const row = document.createElement('div');
-    row.textContent = `${label}: ${value || 'N/A'}`;
-    hierarchy.appendChild(row);
-  });
-  wrapper.appendChild(hierarchy);
-
-  return wrapper;
 }
 
 function formatConfidence(value) {
@@ -1001,7 +919,7 @@ export default function MapFoundation({
       bounds.extend(position);
 
       const marker = L.marker(position, { icon: deviceMarkerIcon })
-        .bindPopup(createPopupContent(device))
+        .bindPopup(createDevicePopupContent(device))
         .addTo(markerLayer);
       if (diseaseFiltersActive) {
         marker.setOpacity(0.7);

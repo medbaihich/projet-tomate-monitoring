@@ -2,28 +2,11 @@ import axiosClient from '@/api/axiosClient';
 
 export const INSPECTIONS_WORKSPACE_QUERY_KEY = ['inspections-workspace'];
 export const INSPECTION_REFERENCE_DATA_QUERY_KEY = ['inspection-reference-data'];
-export const INSPECTION_MAP_SIGNALS_QUERY_KEY = ['inspections', 'map-signals'];
 const INSPECTION_ORDERING_FIELDS = {
   captured_at: 'captured_at',
   confidence_score: 'confidence_score',
   processed_or_updated: 'processed_at',
 };
-const INSPECTION_MAP_SIGNAL_PARAM_NAMES = [
-  'disease',
-  'disease_name',
-  'severity',
-  'min_confidence',
-  'captured_after',
-  'captured_before',
-  'site',
-  'greenhouse',
-  'zone',
-  'line',
-  'organ_type',
-  'device',
-  'status',
-  'processing_status',
-];
 const INSPECTION_LIST_FILTER_PARAM_NAMES = [
   'search',
   'device',
@@ -89,36 +72,4 @@ export function buildInspectionListParams(filters = {}) {
 
     return activeParams;
   }, {});
-}
-
-export function buildInspectionMapSignalParams(params = {}) {
-  return INSPECTION_MAP_SIGNAL_PARAM_NAMES.reduce((activeParams, paramName) => {
-    const value = params[paramName];
-
-    if (value !== null && value !== undefined && value !== '') {
-      activeParams[paramName] = value;
-    }
-
-    return activeParams;
-  }, {});
-}
-
-export function buildInspectionMapSignalsQueryKey(params = {}) {
-  return [
-    ...INSPECTION_MAP_SIGNALS_QUERY_KEY,
-    buildInspectionMapSignalParams(params),
-  ];
-}
-
-export async function fetchInspectionMapSignals(params = {}) {
-  const { data } = await axiosClient.get('/api/v1/inspections/map-signals/', {
-    params: buildInspectionMapSignalParams(params),
-  });
-
-  return data;
-}
-
-export async function fetchInspectionById(inspectionId) {
-  const { data } = await axiosClient.get(`/api/v1/inspections/inspections/${inspectionId}/`);
-  return data;
 }

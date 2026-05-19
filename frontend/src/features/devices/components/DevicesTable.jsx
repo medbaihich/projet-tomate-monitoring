@@ -1,5 +1,11 @@
 import { useMemo } from 'react';
 import {
+  DeleteOutlineRounded as DeleteOutlineRoundedIcon,
+  EditOutlined as EditOutlinedIcon,
+  RoomOutlined as RoomOutlinedIcon,
+} from '@mui/icons-material';
+import { IconButton, Tooltip } from '@mui/material';
+import {
   flexRender,
   getCoreRowModel,
   useReactTable,
@@ -73,6 +79,44 @@ function DevicesTableSkeleton() {
   );
 }
 
+function ActionIconButton({
+  icon,
+  title,
+  ariaLabel,
+  onClick,
+  isLightMode,
+}) {
+  return (
+    <Tooltip title={title} arrow>
+      <IconButton
+        size="small"
+        aria-label={ariaLabel}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick();
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        sx={{
+          width: 30,
+          height: 30,
+          borderRadius: 1.5,
+          color: isLightMode ? '#475569' : 'rgba(226, 232, 240, 0.92)',
+          border: '1px solid',
+          borderColor: isLightMode ? 'rgba(203, 213, 225, 0.92)' : 'rgba(255, 255, 255, 0.12)',
+          bgcolor: isLightMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(255, 255, 255, 0.04)',
+          '&:hover': {
+            borderColor: isLightMode ? 'rgba(148, 163, 184, 0.4)' : 'rgba(255, 255, 255, 0.2)',
+            bgcolor: isLightMode ? 'rgba(248, 250, 252, 0.98)' : 'rgba(255, 255, 255, 0.08)',
+          },
+        }}
+      >
+        {icon}
+      </IconButton>
+    </Tooltip>
+  );
+}
+
 export default function DevicesTable({
   devices,
   totalCount,
@@ -100,6 +144,10 @@ export default function DevicesTable({
   onLineFilterChange,
   onSelectDevice,
   onRefresh,
+  isAdmin,
+  onEditDevice,
+  onDeleteDevice,
+  onShowDeviceOnMap,
 }) {
   const { mode } = useThemeMode();
   const isLightMode = mode === 'light';
@@ -177,8 +225,42 @@ export default function DevicesTable({
           </span>
         ),
       },
+      {
+        id: 'actions',
+        enableSorting: false,
+        header: () => <div className="text-right">Actions</div>,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-1">
+            {isAdmin ? (
+              <>
+                <ActionIconButton
+                  title="Edit device"
+                  ariaLabel={`Edit device ${row.original.name || row.original.identifier || row.original.id}`}
+                  icon={<EditOutlinedIcon sx={{ fontSize: 17 }} />}
+                  onClick={() => onEditDevice(row.original)}
+                  isLightMode={isLightMode}
+                />
+                <ActionIconButton
+                  title="Delete device"
+                  ariaLabel={`Delete device ${row.original.name || row.original.identifier || row.original.id}`}
+                  icon={<DeleteOutlineRoundedIcon sx={{ fontSize: 17 }} />}
+                  onClick={() => onDeleteDevice(row.original)}
+                  isLightMode={isLightMode}
+                />
+              </>
+            ) : null}
+            <ActionIconButton
+              title="Show on map"
+              ariaLabel={`Show device ${row.original.name || row.original.identifier || row.original.id} on map`}
+              icon={<RoomOutlinedIcon sx={{ fontSize: 17 }} />}
+              onClick={() => onShowDeviceOnMap(row.original)}
+              isLightMode={isLightMode}
+            />
+          </div>
+        ),
+      },
     ],
-    [],
+    [isAdmin, isLightMode, onDeleteDevice, onEditDevice, onShowDeviceOnMap],
   );
   // TanStack Table intentionally returns non-memoizable helpers.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -284,7 +366,11 @@ export default function DevicesTable({
                   {headerGroup.headers.map((header) => (
                     <TableHead
                       key={header.id}
-                      className={cn('h-10 whitespace-nowrap px-3', isLightMode && 'bg-slate-50/80 text-slate-600')}
+                      className={cn(
+                        'h-10 whitespace-nowrap px-3',
+                        header.column.id === 'actions' && 'text-right',
+                        isLightMode && 'bg-slate-50/80 text-slate-600',
+                      )}
                     >
                       {header.isPlaceholder
                         ? null
@@ -324,7 +410,7 @@ export default function DevicesTable({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-28 text-center text-muted-foreground">
+                  <TableCell colSpan={table.getAllLeafColumns().length} className="h-28 text-center text-muted-foreground">
                     No devices match the current table filters.
                   </TableCell>
                 </TableRow>

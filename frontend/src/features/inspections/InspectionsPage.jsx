@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
@@ -13,13 +13,12 @@ import PageHeader from '@/components/ui/PageHeader';
 import PanelCard from '@/components/ui/PanelCard';
 import {
   fetchInspectionReferenceData,
-  fetchInspectionById,
   fetchInspectionsPage,
   INSPECTION_REFERENCE_DATA_QUERY_KEY,
   INSPECTIONS_WORKSPACE_QUERY_KEY,
 } from '@/features/inspections/api';
-import HistoricalDiseaseMap from '@/features/inspections/HistoricalDiseaseMap';
 import InspectionDetailDrawer from '@/features/inspections/InspectionDetailDrawer';
+import InspectionLocationMapDialog from '@/features/inspections/InspectionLocationMapDialog';
 import InspectionsTable from '@/features/inspections/components/InspectionsTable';
 
 const DEFAULT_PAGINATION = {
@@ -38,13 +37,6 @@ function buildMap(items) {
   return new Map(items.map((item) => [item.id, item]));
 }
 
-const DEFAULT_DRAWER_STATE = {
-  open: false,
-  inspection: null,
-  loading: false,
-  errorMessage: '',
-  contextSignal: null,
-};
 const FILTER_SELECT_CLASS = 'h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 const DEFAULT_FILTERS = {
   search: '',
@@ -84,11 +76,11 @@ function formatFilterLabel(value) {
 }
 
 export default function InspectionsPage() {
-  const [drawerState, setDrawerState] = useState(DEFAULT_DRAWER_STATE);
+  const [selectedInspection, setSelectedInspection] = useState(null);
+  const [mapInspection, setMapInspection] = useState(null);
   const [pagination, setPagination] = useState(DEFAULT_PAGINATION);
   const [sorting, setSorting] = useState(DEFAULT_SORTING);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
-  const selectionRequestRef = useRef(0);
   const deferredSearch = useDeferredValue(filters.search.trim());
   const hasActiveFilters = useMemo(
     () => Object.values(filters).some((value) => Boolean(value)),
@@ -105,17 +97,6 @@ export default function InspectionsPage() {
     }),
     [deferredSearch, filters.device, filters.disease, filters.organ_type, filters.processing_status, filters.status],
   );
-  const mapFilters = useMemo(
-    () => ({
-      disease: filters.disease,
-      organ_type: filters.organ_type,
-      device: filters.device,
-      status: filters.status,
-      processing_status: filters.processing_status,
-    }),
-    [filters.device, filters.disease, filters.organ_type, filters.processing_status, filters.status],
-  );
-
   const inspectionsQuery = useQuery({
     queryKey: [
       ...INSPECTIONS_WORKSPACE_QUERY_KEY,
@@ -165,93 +146,28 @@ export default function InspectionsPage() {
     [diseases],
   );
 
-  const selectedInspection = useMemo(
-    () => inspections.find((inspection) => inspection.id === drawerState.inspection?.id) ?? drawerState.inspection,
-    [drawerState.inspection, inspections],
+  const resolvedSelectedInspection = useMemo(
+    () => inspections.find((inspection) => inspection.id === selectedInspection?.id) ?? selectedInspection,
+    [inspections, selectedInspection],
   );
   const visibleSelectedInspectionId = useMemo(
     () => (
-      selectedInspection && inspections.some((inspection) => inspection.id === selectedInspection.id)
-        ? selectedInspection.id
+      resolvedSelectedInspection && inspections.some((inspection) => inspection.id === resolvedSelectedInspection.id)
+        ? resolvedSelectedInspection.id
         : null
     ),
-    [inspections, selectedInspection],
+    [inspections, resolvedSelectedInspection],
   );
 
   const handleSelectInspection = useCallback((inspection) => {
-    selectionRequestRef.current += 1;
-    setDrawerState(
-      inspection
-        ? {
-          open: true,
-          inspection,
-          loading: false,
-          errorMessage: '',
-          contextSignal: null,
-        }
-        : DEFAULT_DRAWER_STATE,
-    );
+    setSelectedInspection(inspection || null);
   }, []);
   const handleCloseInspectionDetails = useCallback(() => {
-    selectionRequestRef.current += 1;
-    setDrawerState(DEFAULT_DRAWER_STATE);
+    setSelectedInspection(null);
   }, []);
-  const handleSelectInspectionFromMap = useCallback(async (signal) => {
-    if (!signal?.inspection_id) {
-      return;
-    }
-
-    const inspectionOnPage = inspections.find((inspection) => inspection.id === signal.inspection_id);
-    if (inspectionOnPage) {
-      selectionRequestRef.current += 1;
-      setDrawerState({
-        open: true,
-        inspection: inspectionOnPage,
-        loading: false,
-        errorMessage: '',
-        contextSignal: signal,
-      });
-      return;
-    }
-
-    const requestId = selectionRequestRef.current + 1;
-    selectionRequestRef.current = requestId;
-    setDrawerState({
-      open: true,
-      inspection: null,
-      loading: true,
-      errorMessage: '',
-      contextSignal: signal,
-    });
-
-    try {
-      const inspection = await fetchInspectionById(signal.inspection_id);
-
-      if (selectionRequestRef.current !== requestId) {
-        return;
-      }
-
-      setDrawerState({
-        open: true,
-        inspection,
-        loading: false,
-        errorMessage: '',
-        contextSignal: signal,
-      });
-    } catch (error) {
-      if (selectionRequestRef.current !== requestId) {
-        return;
-      }
-
-      setDrawerState({
-        open: true,
-        inspection: null,
-        loading: false,
-        errorMessage: error?.response?.data?.detail || error?.message || 'Failed to load inspection details.',
-        contextSignal: signal,
-      });
-    }
-  }, [inspections]);
+  const handleShowInspectionOnMap = useCallback((inspection) => {
+    setMapInspection(inspection);
+  }, []);
   const handlePaginationChange = useCallback((updater) => {
     setPagination((currentValue) => (typeof updater === 'function' ? updater(currentValue) : updater));
   }, []);
@@ -398,7 +314,7 @@ export default function InspectionsPage() {
 
             <div className="flex flex-col gap-2 text-sm text-muted-foreground lg:flex-row lg:items-center lg:justify-between">
               <p>
-                Search narrows the registry table only. Disease, organ, device, status, and processing filters are shared with the historical map. The historical map remains limited to completed disease-positive inspections.
+                Search narrows the registry table only. Disease, organ, device, status, and processing filters combine to refine the inspection registry.
               </p>
               <Button
                 type="button"
@@ -427,35 +343,25 @@ export default function InspectionsPage() {
             onSortingChange={handleSortingChange}
             onSelectInspection={handleSelectInspection}
             onRefresh={() => inspectionsQuery.refetch()}
-          />
-        </PanelCard>
-
-        <PanelCard
-          title="Historical Disease Map"
-          subtitle="Archived disease detections shown at device locations with DB-backed spread zones."
-        >
-          <HistoricalDiseaseMap
-            filters={mapFilters}
-            selectedInspectionId={selectedInspection?.id || ''}
-            onSignalSelect={handleSelectInspectionFromMap}
+            onShowInspectionOnMap={handleShowInspectionOnMap}
           />
         </PanelCard>
       </Stack>
 
       <InspectionDetailDrawer
-        open={drawerState.open}
+        open={Boolean(resolvedSelectedInspection)}
         onClose={handleCloseInspectionDetails}
-        inspection={selectedInspection}
+        inspection={resolvedSelectedInspection}
         deviceMap={deviceMap}
         diseaseMap={diseaseMap}
-        isLoading={drawerState.loading}
-        errorMessage={drawerState.errorMessage}
-        contextSignal={drawerState.contextSignal}
-        onRetry={
-          drawerState.contextSignal
-            ? () => handleSelectInspectionFromMap(drawerState.contextSignal)
-            : undefined
-        }
+      />
+
+      <InspectionLocationMapDialog
+        open={Boolean(mapInspection)}
+        inspection={mapInspection}
+        deviceMap={deviceMap}
+        diseaseMap={diseaseMap}
+        onClose={() => setMapInspection(null)}
       />
     </>
   );

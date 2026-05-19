@@ -10,18 +10,23 @@ import {
 import PageHeader from '@/components/ui/PageHeader';
 import PanelCard from '@/components/ui/PanelCard';
 import CreateDeviceDialog from '@/features/devices/CreateDeviceDialog';
+import DeleteDeviceDialog from '@/features/devices/DeleteDeviceDialog';
+import DeviceLocationMapDialog from '@/features/devices/DeviceLocationMapDialog';
+import EditDeviceDialog from '@/features/devices/EditDeviceDialog';
 import DevicesTable from '@/features/devices/components/DevicesTable';
 import DeviceDetailDrawer from '@/features/devices/DeviceDetailDrawer';
-import MapFoundation from '@/features/map/MapFoundation';
 import {
   createDevice,
+  deleteDevice,
   DEVICES_FILTER_OPTIONS_QUERY_KEY,
   DEVICE_LINES_QUERY_KEY,
   DEVICES_TABLE_QUERY_KEY,
   fetchDevicesFilterOptions,
   fetchDevicesPage,
   fetchLines,
+  updateDevice,
 } from '@/features/devices/api';
+import { resolveErrorMessage } from '@/features/devices/deviceFormUtils';
 import useAuthStore from '@/store/authStore';
 
 function toHierarchyPath(device) {
@@ -97,6 +102,11 @@ export default function DevicesPage() {
   const [selectedPath, setSelectedPath] = useState(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createDialogSession, setCreateDialogSession] = useState(0);
+  const [editDialogSession, setEditDialogSession] = useState(0);
+  const [editingDevice, setEditingDevice] = useState(null);
+  const [deletingDevice, setDeletingDevice] = useState(null);
+  const [deviceMapDialogDevice, setDeviceMapDialogDevice] = useState(null);
+  const [deleteNotice, setDeleteNotice] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
   const [sorting, setSorting] = useState([]);
@@ -207,17 +217,85 @@ export default function DevicesPage() {
   const createDeviceMutation = useMutation({
     mutationFn: createDevice,
   });
+  const updateDeviceMutation = useMutation({
+    mutationFn: updateDevice,
+  });
+  const deleteDeviceMutation = useMutation({
+    mutationFn: deleteDevice,
+  });
+
+  const refreshDevicesData = useCallback(async () => {
+    await Promise.all([
+      devicesQuery.refetch(),
+      filterOptionsQuery.refetch(),
+    ]);
+  }, [devicesQuery, filterOptionsQuery]);
 
   const handleCreateDevice = async (payload) => {
     const createdDevice = await createDeviceMutation.mutateAsync(payload);
-    await devicesQuery.refetch();
-    await filterOptionsQuery.refetch();
+    await refreshDevicesData();
     handleSelectDevice(createdDevice);
 
     setIsCreateDialogOpen(false);
     setSuccessMessage(`Device "${createdDevice.name}" created successfully.`);
     return createdDevice;
   };
+
+  const handleEditDevice = useCallback((device) => {
+    setEditDialogSession((currentValue) => currentValue + 1);
+    setEditingDevice(device);
+  }, []);
+
+  const handleUpdateDevice = async (payload) => {
+    const updatedDevice = await updateDeviceMutation.mutateAsync(payload);
+    await refreshDevicesData();
+
+    if (selectedDevice?.id === updatedDevice.id) {
+      handleSelectDevice(updatedDevice);
+    }
+
+    setEditingDevice(null);
+    setSuccessMessage(`Device "${updatedDevice.name}" updated successfully.`);
+    return updatedDevice;
+  };
+
+  const handleOpenDeleteDialog = useCallback((device) => {
+    setDeleteNotice('');
+    setDeletingDevice(device);
+  }, []);
+
+  const handleDeleteDevice = async () => {
+    if (!deletingDevice) {
+      return;
+    }
+
+    try {
+      await deleteDeviceMutation.mutateAsync(deletingDevice.id);
+      await refreshDevicesData();
+
+      if (selectedDevice?.id === deletingDevice.id) {
+        handleCloseDeviceDetails();
+      }
+
+      if (editingDevice?.id === deletingDevice.id) {
+        setEditingDevice(null);
+      }
+
+      if (deviceMapDialogDevice?.id === deletingDevice.id) {
+        setDeviceMapDialogDevice(null);
+      }
+
+      setSuccessMessage(`Device "${deletingDevice.name}" deleted successfully.`);
+      setDeletingDevice(null);
+      setDeleteNotice('');
+    } catch (error) {
+      setDeleteNotice(resolveErrorMessage(error, 'Unable to delete the device.'));
+    }
+  };
+
+  const handleShowDeviceOnMap = useCallback((device) => {
+    setDeviceMapDialogDevice(device);
+  }, []);
 
   return (
     <Stack spacing={1.75}>
@@ -310,6 +388,10 @@ export default function DevicesPage() {
             onLineFilterChange={handleLineFilterChange}
             onSelectDevice={handleSelectDevice}
             onRefresh={() => devicesQuery.refetch()}
+            isAdmin={isAdmin}
+            onEditDevice={handleEditDevice}
+            onDeleteDevice={handleOpenDeleteDialog}
+            onShowDeviceOnMap={handleShowDeviceOnMap}
           />
         )}
       </PanelCard>
@@ -321,29 +403,6 @@ export default function DevicesPage() {
         onClose={handleCloseDeviceDetails}
       />
 
-      <PanelCard
-        title="Device location overview"
-        subtitle="Map view using the same hierarchy filters as the device registry."
-      >
-        <MapFoundation
-          showFilters={false}
-          selectedDeviceId={selectedDevice?.id || ''}
-          onDeviceSelect={handleSelectDevice}
-          siteFilter={siteFilter}
-          greenhouseFilter={greenhouseFilter}
-          zoneFilter={zoneFilter}
-          lineFilter={lineFilter}
-          siteOptions={hierarchyOptions.siteOptions}
-          greenhouseOptions={hierarchyOptions.greenhouseOptions}
-          zoneOptions={hierarchyOptions.zoneOptions}
-          lineOptions={availableLines}
-          onSiteFilterChange={handleSiteFilterChange}
-          onGreenhouseFilterChange={handleGreenhouseFilterChange}
-          onZoneFilterChange={handleZoneFilterChange}
-          onLineFilterChange={handleLineFilterChange}
-        />
-      </PanelCard>
-
       <CreateDeviceDialog
         key={createDialogSession}
         open={isCreateDialogOpen}
@@ -352,6 +411,34 @@ export default function DevicesPage() {
         isSubmitting={createDeviceMutation.isPending}
         lines={availableLines}
         initialLineId={selectedDevice?.line || ''}
+      />
+
+      <EditDeviceDialog
+        key={editDialogSession}
+        open={Boolean(editingDevice)}
+        device={editingDevice}
+        onClose={() => setEditingDevice(null)}
+        onSubmit={handleUpdateDevice}
+        isSubmitting={updateDeviceMutation.isPending}
+        lines={availableLines}
+      />
+
+      <DeleteDeviceDialog
+        open={Boolean(deletingDevice)}
+        device={deletingDevice}
+        notice={deleteNotice}
+        isSubmitting={deleteDeviceMutation.isPending}
+        onClose={() => {
+          setDeletingDevice(null);
+          setDeleteNotice('');
+        }}
+        onConfirm={handleDeleteDevice}
+      />
+
+      <DeviceLocationMapDialog
+        open={Boolean(deviceMapDialogDevice)}
+        device={deviceMapDialogDevice}
+        onClose={() => setDeviceMapDialogDevice(null)}
       />
 
       <Snackbar

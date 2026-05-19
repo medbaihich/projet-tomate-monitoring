@@ -1,5 +1,6 @@
 from django.urls import reverse
 from django.utils import timezone
+from unittest.mock import patch
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -77,4 +78,22 @@ class ReviewRolePermissionTests(APITestCase):
         self.assertEqual(Review.objects.count(), 1)
         review = Review.objects.get()
         self.assertEqual(review.reviewer, self.operator_user)
+
+    def test_review_creation_emits_dashboard_refresh(self):
+        self.client.force_authenticate(user=self.operator_user)
+
+        with patch("apps.review.services.schedule_dashboard_refresh_event") as refresh_mock:
+            response = self.client.post(
+                reverse("review-list"),
+                {
+                    "inspection": str(self.inspection.id),
+                    "decision": Review.Decision.CORRECTED,
+                    "corrected_disease": str(self.corrected_disease.id),
+                    "comments": "Manual correction required.",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        refresh_mock.assert_called_once_with("review.created")
 

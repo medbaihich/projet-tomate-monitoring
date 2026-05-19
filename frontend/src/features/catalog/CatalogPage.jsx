@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Add as AddIcon } from '@mui/icons-material';
 import {
   Alert,
@@ -10,14 +10,11 @@ import {
 import PageHeader from '@/components/ui/PageHeader';
 import PanelCard from '@/components/ui/PanelCard';
 import CatalogDiseaseDetailDrawer from '@/features/catalog/CatalogDiseaseDetailDrawer';
-import CatalogDiseaseSpreadMap from '@/features/catalog/CatalogDiseaseSpreadMap';
 import CreateDiseaseDialog from '@/features/catalog/CreateDiseaseDialog';
 import CatalogDiseasesTable from '@/features/catalog/components/CatalogDiseasesTable';
 import {
   CATALOG_DISEASES_QUERY_KEY,
-  CATALOG_PROFILE_BOARD_QUERY_KEY,
   createDisease,
-  fetchCatalogDiseaseProfileBoard,
   fetchDiseasesPage,
 } from '@/features/catalog/api';
 import useAuthStore from '@/store/authStore';
@@ -30,7 +27,6 @@ export default function CatalogPage() {
   const [createDialogSession, setCreateDialogSession] = useState(0);
   const [successMessage, setSuccessMessage] = useState('');
   const [organTypeFilter, setOrganTypeFilter] = useState('');
-  const queryClient = useQueryClient();
   const roleName = useAuthStore((state) => state.user?.role?.name || '');
   const isAdmin = roleName.trim().toLowerCase() === 'admin';
 
@@ -51,23 +47,8 @@ export default function CatalogPage() {
     placeholderData: (previousData) => previousData,
   });
 
-  const {
-    data: spreadMapDiseases = [],
-    isLoading: isSpreadMapLoading,
-    isError: isSpreadMapError,
-  } = useQuery({
-    queryKey: CATALOG_PROFILE_BOARD_QUERY_KEY,
-    queryFn: fetchCatalogDiseaseProfileBoard,
-  });
-
   const rows = data?.results ?? [];
   const rowCount = data?.count ?? 0;
-  const filteredSpreadMapDiseases = useMemo(
-    () => (organTypeFilter
-      ? spreadMapDiseases.filter((disease) => disease.organ_type === organTypeFilter)
-      : spreadMapDiseases),
-    [organTypeFilter, spreadMapDiseases],
-  );
 
   const handleSelectDisease = useCallback((disease) => {
     setSelectedDisease(disease ?? null);
@@ -98,10 +79,7 @@ export default function CatalogPage() {
     setSelectedDisease(createdDisease);
     setIsCreateDialogOpen(false);
     setSuccessMessage(`Disease "${createdDisease.name}" created successfully.`);
-    await Promise.all([
-      refetch(),
-      queryClient.invalidateQueries({ queryKey: CATALOG_PROFILE_BOARD_QUERY_KEY }),
-    ]);
+    await refetch();
     return createdDisease;
   };
 
@@ -185,13 +163,6 @@ export default function CatalogPage() {
             onRefresh={() => refetch()}
           />
         </PanelCard>
-
-        <CatalogDiseaseSpreadMap
-          diseases={filteredSpreadMapDiseases}
-          isLoading={isSpreadMapLoading}
-          isError={isSpreadMapError}
-          onSelectDisease={handleSelectDisease}
-        />
       </Stack>
 
       <CatalogDiseaseDetailDrawer

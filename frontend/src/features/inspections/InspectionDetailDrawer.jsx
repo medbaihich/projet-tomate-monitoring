@@ -1,11 +1,8 @@
 import {
-  Alert,
   Box,
-  Button,
   Card,
   CardContent,
   Chip,
-  CircularProgress,
   Divider,
   Portal,
   Stack,
@@ -185,10 +182,6 @@ export default function InspectionDetailDrawer({
   inspection,
   deviceMap,
   diseaseMap,
-  isLoading = false,
-  errorMessage = '',
-  contextSignal = null,
-  onRetry,
 }) {
   const { mode } = useThemeMode();
   const isLightMode = mode === 'light';
@@ -196,13 +189,13 @@ export default function InspectionDetailDrawer({
   const diseaseRecord = resolveInspectionDiseaseRecord(inspection?.predicted_disease, diseaseMap);
   const predictedDiseaseLabel = inspection
     ? (inspection.top1_label || resolveInspectionDiseaseLabel(inspection.predicted_disease, diseaseMap))
-    : (contextSignal?.disease_name || contextSignal?.label || 'Selected inspection');
+    : 'Selected inspection';
   const mapProfile = diseaseRecord?.map_profile || null;
   const metadataRows = buildMetadataRows(inspection?.extra_metadata);
   const topMatches = [...(inspection?.matches ?? [])].sort((left, right) => left.rank_order - right.rank_order);
   const headerDeviceLabel = inspection
     ? resolveInspectionDeviceLabel(inspection?.device, deviceMap)
-    : (contextSignal?.device_name || 'Loading inspection details');
+    : 'Inspection device';
 
   return (
     <Portal>
@@ -464,29 +457,13 @@ export default function InspectionDetailDrawer({
                 <Divider sx={{ borderColor: isLightMode ? 'rgba(226,232,240,0.92)' : 'rgba(148, 163, 184, 0.14)' }} />
               </Stack>
             ) : (
-              <Stack spacing={1.5} sx={{ minHeight: 220, justifyContent: 'center' }}>
-                {isLoading ? (
-                  <Stack spacing={1.5} alignItems="center" textAlign="center">
-                    <CircularProgress size={28} sx={{ color: isLightMode ? '#16a34a' : '#86EFAC' }} />
-                    <Typography variant="body2" sx={{ color: isLightMode ? '#64748b' : 'rgba(203, 213, 225, 0.78)' }}>
-                      Loading full inspection details from the archive record.
-                    </Typography>
-                  </Stack>
-                ) : null}
-
-                {!isLoading && errorMessage ? (
-                  <Alert
-                    severity="error"
-                    action={onRetry ? <Button color="inherit" size="small" onClick={onRetry}>Retry</Button> : null}
-                    sx={{
-                      bgcolor: isLightMode ? 'rgba(254,242,242,0.96)' : 'rgba(127, 29, 29, 0.18)',
-                      color: isLightMode ? '#b91c1c' : '#FEE2E2',
-                      border: isLightMode ? '1px solid rgba(248,113,113,0.28)' : '1px solid rgba(248, 113, 113, 0.32)',
-                    }}
-                  >
-                    {errorMessage}
-                  </Alert>
-                ) : null}
+              <Stack spacing={1} sx={{ minHeight: 220, justifyContent: 'center' }}>
+                <Typography
+                  variant="body2"
+                  sx={{ color: isLightMode ? '#64748b' : 'rgba(203, 213, 225, 0.78)', textAlign: 'center' }}
+                >
+                  Select an inspection from the registry to view its details.
+                </Typography>
               </Stack>
             )}
           </Box>

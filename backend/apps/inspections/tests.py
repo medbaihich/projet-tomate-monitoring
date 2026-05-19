@@ -7,6 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
+from unittest.mock import patch
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -16,7 +17,7 @@ from apps.devices.models import Device, Greenhouse, Line, Site, Zone
 from apps.inference.models import InferenceIndex, ModelVersion
 from apps.inspections.models import Inspection
 from apps.inspections.serializers import InspectionCreateSerializer
-from apps.inspections.services import create_inspection_with_matches
+from apps.inspections.services import create_inspection_with_matches, ingest_ai_result_payload
 
 
 class InspectionConfidenceScoreTestMixin:
@@ -965,4 +966,81 @@ class InspectionDiseaseResolutionTests(TestCase):
         )
 
         self.assertEqual(inspection.predicted_disease, self.leaf_curl)
+
+
+class InspectionDashboardRefreshTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        SeedDemoDataCommand().handle()
+        cls.device = Device.objects.get(identifier="demo-device-001")
+        cls.inference_index = InferenceIndex.objects.get(name="leaf-demo-index")
+        cls.healthy_disease = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="healthy",
+        )
+        cls.now = timezone.now().replace(microsecond=0)
+
+    def test_create_inspection_with_matches_emits_dashboard_refresh_for_new_inspection(self):
+        with patch("apps.inspections.services.schedule_dashboard_refresh_event") as refresh_mock:
+            inspection = create_inspection_with_matches(
+                inspection_data={
+                    "device": self.device,
+                    "inference_index": self.inference_index,
+                    "predicted_disease": self.healthy_disease,
+                    "organ_type": Inspection.OrganType.LEAF,
+                    "status": Inspection.Status.NEW,
+                    "processing_status": Inspection.ProcessingStatus.COMPLETED,
+                    "source_message_id": "dashboard-refresh-inspection-create",
+                    "top1_label": self.healthy_disease.name,
+                    "confidence_score": 0.91,
+                    "captured_at": self.now,
+                    "received_at": self.now,
+                    "processed_at": self.now + timedelta(minutes=1),
+                    "extra_metadata": {"source": "dashboard-refresh-test"},
+                },
+                matches_data=[],
+            )
+
+        self.assertIsNotNone(inspection.id)
+        refresh_mock.assert_called_once_with("inspection.created")
+
+    def test_duplicate_ai_ingestion_replay_does_not_emit_dashboard_refresh(self):
+        inspection = Inspection.objects.create(
+            device=self.device,
+            inference_index=self.inference_index,
+            predicted_disease=self.healthy_disease,
+            organ_type=Inspection.OrganType.LEAF,
+            status=Inspection.Status.NEW,
+            processing_status=Inspection.ProcessingStatus.COMPLETED,
+            source_message_id="dashboard-refresh-duplicate",
+            top1_label=self.healthy_disease.name,
+            confidence_score=0.88,
+            captured_at=self.now,
+            received_at=self.now,
+            processed_at=self.now + timedelta(minutes=1),
+            extra_metadata={"source": "existing-inspection"},
+        )
+
+        ai_result_data = {
+            "schema_version": "ai-worker-result.v1",
+            "message_type": "inspection_result",
+            "source_message_id": inspection.source_message_id,
+            "device_identifier": self.device.identifier,
+            "organ_type": Inspection.OrganType.LEAF,
+            "captured_at": self.now,
+            "received_at": self.now,
+            "processed_at": self.now + timedelta(minutes=1),
+            "feature_model": "TestModel",
+            "feature_dim": 1280,
+            "l2_normalized": True,
+            "matches": [],
+            "extra_metadata": {},
+        }
+
+        with patch("apps.inspections.services.schedule_dashboard_refresh_event") as refresh_mock:
+            outcome = ingest_ai_result_payload(ai_result_data=ai_result_data)
+
+        self.assertFalse(outcome.created)
+        self.assertTrue(outcome.duplicate)
+        refresh_mock.assert_not_called()
 

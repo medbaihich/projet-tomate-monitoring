@@ -1,9 +1,13 @@
 from django.urls import reverse
+from unittest.mock import patch
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Role, User
 from apps.devices.models import Device, Greenhouse, Line, Site, Zone
+from apps.inference.models import InferenceIndex, ModelVersion
+from apps.inspections.models import Inspection
 
 
 class DevicesRolePermissionTests(APITestCase):
@@ -32,6 +36,15 @@ class DevicesRolePermissionTests(APITestCase):
             line=self.line,
             name="Camera Node 1",
             identifier="camera-node-1",
+        )
+        self.model_version = ModelVersion.objects.create(
+            name="Devices Test Model",
+            version="v1",
+        )
+        self.inference_index = InferenceIndex.objects.create(
+            model_version=self.model_version,
+            name="devices-test-leaf-index",
+            organ_type=InferenceIndex.OrganType.LEAF,
         )
 
     def test_operator_can_read_device_list(self):
@@ -244,4 +257,74 @@ class DevicesRolePermissionTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 1)
+
+    def test_device_create_emits_dashboard_refresh_event(self):
+        self.client.force_authenticate(user=self.admin_user)
+
+        with patch("apps.devices.views.schedule_dashboard_refresh_event") as refresh_mock:
+            response = self.client.post(
+                reverse("device-list"),
+                {
+                    "line": str(self.line.id),
+                    "name": "Camera Node 4",
+                    "identifier": "camera-node-4",
+                    "description": "Live dashboard create test",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        refresh_mock.assert_called_once_with("device.created")
+
+    def test_device_update_emits_dashboard_refresh_event(self):
+        self.client.force_authenticate(user=self.admin_user)
+
+        with patch("apps.devices.views.schedule_dashboard_refresh_event") as refresh_mock:
+            response = self.client.patch(
+                reverse("device-detail", args=[self.device.id]),
+                {
+                    "latitude": 34.125,
+                    "longitude": -6.831,
+                    "map_label": "Updated camera location",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        refresh_mock.assert_called_once_with("device.updated")
+
+    def test_device_delete_emits_dashboard_refresh_event(self):
+        self.client.force_authenticate(user=self.admin_user)
+
+        with patch("apps.devices.views.schedule_dashboard_refresh_event") as refresh_mock:
+            response = self.client.delete(reverse("device-detail", args=[self.device.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        refresh_mock.assert_called_once_with("device.deleted")
+
+    def test_device_delete_with_related_inspections_fails_gracefully(self):
+        Inspection.objects.create(
+            device=self.device,
+            inference_index=self.inference_index,
+            organ_type=Inspection.OrganType.LEAF,
+            status=Inspection.Status.NEW,
+            processing_status=Inspection.ProcessingStatus.COMPLETED,
+            source_message_id="device-protected-delete-test",
+            top1_label="Healthy",
+            confidence_score=0.87,
+            captured_at=timezone.now(),
+            received_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+        with patch("apps.devices.views.schedule_dashboard_refresh_event") as refresh_mock:
+            response = self.client.delete(reverse("device-detail", args=[self.device.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(
+            response.data["detail"],
+            "This device cannot be deleted because it has recorded inspections.",
+        )
+        self.assertTrue(Device.objects.filter(pk=self.device.id).exists())
+        refresh_mock.assert_not_called()
 

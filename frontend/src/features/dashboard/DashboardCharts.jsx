@@ -285,7 +285,7 @@ export function DonutBreakdown({ data, centerLabel, centerValue }) {
               data={data}
               dataKey="value"
               nameKey="label"
-              innerRadius={25}
+              innerRadius={27}
               outerRadius={37}
               paddingAngle={2}
               stroke="none"
@@ -314,11 +314,11 @@ export function DonutBreakdown({ data, centerLabel, centerValue }) {
             variant="caption"
             color="text.secondary"
             sx={{
-              fontSize: '0.62rem',
+              fontSize: '0.56rem',
               lineHeight: 1.1,
-              letterSpacing: '0.08em',
+              letterSpacing: '0.05em',
               textTransform: 'uppercase',
-              mb: 0.45,
+              mb: 0.3,
               color: isLightMode ? '#64748b' : '#8EA39B',
             }}
           >

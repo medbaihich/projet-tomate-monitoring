@@ -1,10 +1,18 @@
 import { useMemo } from 'react';
 import {
+  IconButton,
+  Tooltip,
+} from '@mui/material';
+import {
+  RoomOutlined as RoomOutlinedIcon,
+  VisibilityOutlined as VisibilityOutlinedIcon,
+} from '@mui/icons-material';
+import {
   flexRender,
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { Eye, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -61,6 +69,44 @@ function InspectionsTableSkeleton() {
         <Skeleton key={index} className="h-10 w-full" />
       ))}
     </div>
+  );
+}
+
+function ActionIconButton({
+  icon,
+  title,
+  ariaLabel,
+  onClick,
+  isLightMode,
+}) {
+  return (
+    <Tooltip title={title} arrow>
+      <IconButton
+        size="small"
+        aria-label={ariaLabel}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick();
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        sx={{
+          width: 30,
+          height: 30,
+          borderRadius: 1.5,
+          color: isLightMode ? '#475569' : 'rgba(226, 232, 240, 0.92)',
+          border: '1px solid',
+          borderColor: isLightMode ? 'rgba(203, 213, 225, 0.92)' : 'rgba(255, 255, 255, 0.12)',
+          bgcolor: isLightMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(255, 255, 255, 0.04)',
+          '&:hover': {
+            borderColor: isLightMode ? 'rgba(148, 163, 184, 0.4)' : 'rgba(255, 255, 255, 0.2)',
+            bgcolor: isLightMode ? 'rgba(248, 250, 252, 0.98)' : 'rgba(255, 255, 255, 0.08)',
+          },
+        }}
+      >
+        {icon}
+      </IconButton>
+    </Tooltip>
   );
 }
 
@@ -134,6 +180,7 @@ export default function InspectionsTable({
   onSortingChange,
   onSelectInspection,
   onRefresh,
+  onShowInspectionOnMap,
 }) {
   const { mode } = useThemeMode();
   const isLightMode = mode === 'light';
@@ -235,25 +282,28 @@ export default function InspectionsTable({
       {
         id: 'actions',
         enableSorting: false,
-        header: 'Actions',
+        header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={(event) => {
-              event.stopPropagation();
-              onSelectInspection(row.original);
-            }}
-          >
-            <Eye className="h-4 w-4" aria-hidden="true" />
-            View
-          </Button>
+          <div className="flex items-center justify-end gap-1">
+            <ActionIconButton
+              title="View inspection"
+              ariaLabel={`View inspection ${row.original.top1_label || row.original.source_message_id || row.original.id}`}
+              icon={<VisibilityOutlinedIcon sx={{ fontSize: 17 }} />}
+              onClick={() => onSelectInspection(row.original)}
+              isLightMode={isLightMode}
+            />
+            <ActionIconButton
+              title="Show on map"
+              ariaLabel={`Show inspection ${row.original.top1_label || row.original.source_message_id || row.original.id} on map`}
+              icon={<RoomOutlinedIcon sx={{ fontSize: 17 }} />}
+              onClick={() => onShowInspectionOnMap(row.original)}
+              isLightMode={isLightMode}
+            />
+          </div>
         ),
       },
     ],
-    [deviceMap, diseaseMap, onSelectInspection],
+    [deviceMap, diseaseMap, isLightMode, onSelectInspection, onShowInspectionOnMap],
   );
 
   // TanStack Table intentionally returns non-memoizable helpers.
@@ -303,7 +353,11 @@ export default function InspectionsTable({
                   {headerGroup.headers.map((header) => (
                     <TableHead
                       key={header.id}
-                      className={cn('h-10 whitespace-nowrap px-3', isLightMode && 'bg-slate-50/80 text-slate-600')}
+                      className={cn(
+                        'h-10 whitespace-nowrap px-3',
+                        header.column.id === 'actions' && 'text-right',
+                        isLightMode && 'bg-slate-50/80 text-slate-600',
+                      )}
                     >
                       {header.isPlaceholder
                         ? null
@@ -336,7 +390,7 @@ export default function InspectionsTable({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-28 text-center text-muted-foreground">
+                  <TableCell colSpan={table.getAllLeafColumns().length} className="h-28 text-center text-muted-foreground">
                     No inspections match the current registry state.
                   </TableCell>
                 </TableRow>

@@ -23,3 +23,11 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
                 "notification": event["notification"],
             }
         )
+
+    async def dashboard_refresh(self, event):
+        await self.send_json(
+            {
+                "type": "dashboard.refresh",
+                "reason": event["reason"],
+            }
+        )

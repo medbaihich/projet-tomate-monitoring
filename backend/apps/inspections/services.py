@@ -9,7 +9,10 @@ from apps.catalog.models import Disease, normalize_ai_label
 from apps.devices.models import Device
 from apps.inference.models import InferenceIndex
 from apps.inspections.models import Inspection, InspectionMatch
-from apps.notifications.services import maybe_create_disease_alert_notification
+from apps.notifications.services import (
+    maybe_create_disease_alert_notification,
+    schedule_dashboard_refresh_event,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +75,8 @@ def create_inspection_with_matches(*, inspection_data, matches_data=None):
 
         if match_instances:
             InspectionMatch.objects.bulk_create(match_instances)
+
+        schedule_dashboard_refresh_event("inspection.created")
 
     inspection = (
         Inspection.objects.select_related(

@@ -20,6 +20,7 @@ from apps.notifications.serializers import NotificationSerializer
 from apps.notifications.services import (
     NOTIFICATIONS_GROUP_NAME,
     maybe_create_disease_alert_notification,
+    schedule_dashboard_refresh_event,
 )
 
 
@@ -330,6 +331,22 @@ class NotificationServiceTests(NotificationFixtureMixin, TestCase):
         self.assertEqual(event["notification"]["id"], str(notification.id))
         self.assertEqual(event["notification"]["inspection"], str(notification.inspection_id))
         self.assertEqual(event["notification"]["disease"], str(notification.disease_id))
+        assert_json_safe_primitive(self, event)
+        json.dumps(event)
+
+    def test_dashboard_refresh_event_schedules_and_broadcasts_json_safe_payload(self):
+        channel_layer = self.CaptureChannelLayer()
+
+        with patch("apps.notifications.services.transaction.on_commit", side_effect=lambda callback: callback()):
+            with patch("apps.notifications.services.get_channel_layer", return_value=channel_layer):
+                schedule_dashboard_refresh_event("inspection.created")
+
+        self.assertEqual(len(channel_layer.sent_messages), 1)
+
+        group_name, event = channel_layer.sent_messages[0]
+        self.assertEqual(group_name, NOTIFICATIONS_GROUP_NAME)
+        self.assertEqual(event["type"], "dashboard.refresh")
+        self.assertEqual(event["reason"], "inspection.created")
         assert_json_safe_primitive(self, event)
         json.dumps(event)
 

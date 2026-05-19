@@ -1,7 +1,6 @@
 import axiosClient from '@/api/axiosClient';
 
 export const CATALOG_DISEASES_QUERY_KEY = ['catalog-diseases'];
-export const CATALOG_PROFILE_BOARD_QUERY_KEY = ['catalog-disease-profile-board'];
 const CATALOG_ORDERING_FIELDS = {
   name: 'name',
   organ_type: 'organ_type',
@@ -9,19 +8,6 @@ const CATALOG_ORDERING_FIELDS = {
   slug: 'slug',
   updated_at: 'updated_at',
 };
-
-async function fetchAllPages(initialUrl) {
-  const items = [];
-  let nextUrl = initialUrl;
-
-  while (nextUrl) {
-    const { data } = await axiosClient.get(nextUrl);
-    items.push(...(data.results ?? []));
-    nextUrl = data.next;
-  }
-
-  return items;
-}
 
 export async function fetchDiseasesPage({
   page,
@@ -42,10 +28,6 @@ export async function fetchDiseasesPage({
   });
 
   return data;
-}
-
-export async function fetchCatalogDiseaseProfileBoard() {
-  return fetchAllPages('/api/v1/catalog/diseases/?page_size=100&ordering=organ_type,name');
 }
 
 export async function createDisease(payload) {
