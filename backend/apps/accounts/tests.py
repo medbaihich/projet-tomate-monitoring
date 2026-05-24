@@ -130,5 +130,13 @@ class AccountSelfManagementTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("new_password", response.data)
+        self.assertEqual(
+            response.data,
+            {
+                "new_password": [
+                    "This password is too common.",
+                    "This password is entirely numeric.",
+                ]
+            },
+        )
 
