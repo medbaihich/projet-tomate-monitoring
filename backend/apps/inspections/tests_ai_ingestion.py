@@ -128,9 +128,10 @@ class AIResultIngestionApiTests(APITestCase):
             "apps.inspections.services.publish_evidence_image_request_command",
             return_value=publish_result,
         ) as publish_mock:
-            response = self._post(
-                self._build_payload(source_message_id="phase6-ingest-publish-once")
-            )
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self._post(
+                    self._build_payload(source_message_id="phase6-ingest-publish-once")
+                )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         publish_mock.assert_called_once()
@@ -176,9 +177,10 @@ class AIResultIngestionApiTests(APITestCase):
             "apps.inspections.services.publish_evidence_image_request_command",
             return_value=publish_result,
         ) as publish_mock:
-            first_response = self._post(
-                self._build_payload(source_message_id="phase6-ingest-publish-duplicate")
-            )
+            with self.captureOnCommitCallbacks(execute=True):
+                first_response = self._post(
+                    self._build_payload(source_message_id="phase6-ingest-publish-duplicate")
+                )
             second_response = self._post(
                 self._build_payload(
                     source_message_id="phase6-ingest-publish-duplicate",
@@ -250,9 +252,10 @@ class AIResultIngestionApiTests(APITestCase):
             "apps.inspections.services.publish_evidence_image_request_command",
             side_effect=RuntimeError("rabbitmq unavailable"),
         ):
-            response = self._post(
-                self._build_payload(source_message_id="phase6-publish-failure")
-            )
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self._post(
+                    self._build_payload(source_message_id="phase6-publish-failure")
+                )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         inspection = Inspection.objects.get(source_message_id="phase6-publish-failure")

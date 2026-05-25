@@ -1296,7 +1296,8 @@ class EvidenceImageRequestServiceTests(TestCase):
             "apps.inspections.services.publish_evidence_image_request_command",
             return_value=publish_result,
         ) as publish_mock:
-            first_outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+            with self.captureOnCommitCallbacks(execute=True):
+                first_outcome = maybe_create_evidence_image_request_for_inspection(inspection)
             second_outcome = maybe_create_evidence_image_request_for_inspection(inspection)
 
         self.assertTrue(first_outcome.created)
@@ -1328,7 +1329,8 @@ class EvidenceImageRequestServiceTests(TestCase):
             "apps.inspections.services.publish_evidence_image_request_command",
             return_value=publish_result,
         ) as publish_mock:
-            outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+            with self.captureOnCommitCallbacks(execute=True):
+                outcome = maybe_create_evidence_image_request_for_inspection(inspection)
 
         self.assertTrue(outcome.created)
         publish_mock.assert_called_once()
@@ -1345,7 +1347,8 @@ class EvidenceImageRequestServiceTests(TestCase):
         )
 
         with patch("apps.inspections.services.publish_evidence_image_request_command") as publish_mock:
-            outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+            with self.captureOnCommitCallbacks(execute=True):
+                outcome = maybe_create_evidence_image_request_for_inspection(inspection)
 
         self.assertFalse(outcome.created)
         publish_mock.assert_not_called()
@@ -1360,11 +1363,13 @@ class EvidenceImageRequestServiceTests(TestCase):
         )
 
         with patch("apps.inspections.services.publish_evidence_image_request_command") as publish_mock:
-            outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+            with self.captureOnCommitCallbacks(execute=False) as callbacks:
+                outcome = maybe_create_evidence_image_request_for_inspection(inspection)
 
         self.assertTrue(outcome.created)
         outcome.evidence_request.refresh_from_db()
         self.assertEqual(outcome.evidence_request.status, EvidenceImageRequest.Status.PENDING)
+        self.assertEqual(callbacks, [])
         publish_mock.assert_not_called()
 
 
