@@ -18,6 +18,10 @@ from apps.catalog.models import Disease, DiseaseMapProfile
 from apps.core.management.commands.seed_demo_data import Command as SeedDemoDataCommand
 from apps.devices.models import Device, Greenhouse, Line, Site, Zone
 from apps.inference.models import InferenceIndex, ModelVersion
+from apps.inspections.evidence_commands import (
+    EvidenceImageCommandPublishResult,
+    build_evidence_image_request_command_payload,
+)
 from apps.inspections.models import EvidenceImageRequest, Inspection, InspectionEvidenceImage
 from apps.inspections.serializers import InspectionCreateSerializer
 from apps.inspections.services import (
@@ -1052,6 +1056,82 @@ class InspectionDashboardRefreshTests(TestCase):
         refresh_mock.assert_not_called()
 
 
+class EvidenceImageCommandPayloadTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        SeedDemoDataCommand().handle()
+        cls.device = Device.objects.get(identifier="demo-device-001")
+        cls.leaf_index = InferenceIndex.objects.get(name="leaf-demo-index")
+        cls.leaf_healthy = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="healthy",
+        )
+        cls.now = timezone.now().replace(microsecond=0)
+
+    def _create_request(self, *, source_message_id="evidence-command-payload-source"):
+        inspection = Inspection.objects.create(
+            device=self.device,
+            inference_index=self.leaf_index,
+            predicted_disease=self.leaf_healthy,
+            organ_type=Inspection.OrganType.LEAF,
+            status=Inspection.Status.NEW,
+            processing_status=Inspection.ProcessingStatus.COMPLETED,
+            source_message_id=source_message_id,
+            top1_label="healthy",
+            confidence_score=0.85,
+            captured_at=self.now,
+            received_at=self.now,
+            processed_at=self.now + timedelta(minutes=1),
+            extra_metadata={"ai_result": {"requires_review": True}},
+        )
+        return EvidenceImageRequest.objects.create(
+            inspection=inspection,
+            device=self.device,
+            source_message_id=source_message_id,
+            image_id="leaf-image-001",
+            local_image_ref="capture-leaf-001",
+            reason=EvidenceImageRequest.Reason.REVIEW_REQUIRED,
+            status=EvidenceImageRequest.Status.PENDING,
+            requested_at=self.now + timedelta(minutes=2),
+        )
+
+    def test_payload_builder_includes_expected_fields_without_upload_url_by_default(self):
+        evidence_request = self._create_request()
+
+        payload = build_evidence_image_request_command_payload(
+            evidence_request=evidence_request,
+        )
+
+        self.assertEqual(payload["command_schema_version"], "evidence-image-request.v1")
+        self.assertEqual(payload["command_type"], "image_request")
+        self.assertEqual(payload["request_id"], str(evidence_request.id))
+        self.assertEqual(payload["inspection_id"], str(evidence_request.inspection_id))
+        self.assertEqual(payload["source_message_id"], evidence_request.source_message_id)
+        self.assertEqual(payload["device_identifier"], self.device.identifier)
+        self.assertEqual(payload["image_id"], "leaf-image-001")
+        self.assertEqual(payload["local_image_ref"], "capture-leaf-001")
+        self.assertEqual(payload["reason"], EvidenceImageRequest.Reason.REVIEW_REQUIRED)
+        self.assertEqual(payload["upload_path"], "/api/v1/inspections/evidence-images/upload/")
+        self.assertNotIn("upload_url", payload)
+        self.assertNotIn("upload_token", payload)
+        self.assertNotIn("EVIDENCE_IMAGE_UPLOAD_TOKEN", payload)
+
+    @override_settings(EVIDENCE_IMAGE_UPLOAD_BASE_URL="https://platform.example.com")
+    def test_payload_builder_includes_absolute_upload_url_when_configured(self):
+        evidence_request = self._create_request(
+            source_message_id="evidence-command-payload-absolute-url",
+        )
+
+        payload = build_evidence_image_request_command_payload(
+            evidence_request=evidence_request,
+        )
+
+        self.assertEqual(
+            payload["upload_url"],
+            "https://platform.example.com/api/v1/inspections/evidence-images/upload/",
+        )
+
+
 class EvidenceImageRequestServiceTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -1194,6 +1274,98 @@ class EvidenceImageRequestServiceTests(TestCase):
             evidence_request.reason,
             EvidenceImageRequest.Reason.REVIEW_REQUIRED,
         )
+
+    @override_settings(EVIDENCE_IMAGE_COMMANDS_ENABLED=True)
+    def test_disease_positive_request_creation_publishes_command_once(self):
+        inspection = self._create_inspection(
+            source_message_id="evidence-request-publish-disease-positive",
+            disease=self.fruit_late_blight,
+            inference_index=self.fruit_index,
+            organ_type=Inspection.OrganType.FRUIT,
+            top1_label="late_blight",
+        )
+
+        publish_result = EvidenceImageCommandPublishResult(
+            published=True,
+            exchange="amq.topic",
+            routing_key=f"tomato.edge.v1.{self.device.identifier}.commands.image-request",
+            payload={},
+        )
+
+        with patch(
+            "apps.inspections.services.publish_evidence_image_request_command",
+            return_value=publish_result,
+        ) as publish_mock:
+            first_outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+            second_outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+
+        self.assertTrue(first_outcome.created)
+        self.assertFalse(second_outcome.created)
+        publish_mock.assert_called_once()
+        published_request = publish_mock.call_args.kwargs["evidence_request"]
+        self.assertEqual(published_request.inspection_id, inspection.id)
+        self.assertEqual(published_request.device.identifier, self.device.identifier)
+
+    @override_settings(EVIDENCE_IMAGE_COMMANDS_ENABLED=True)
+    def test_review_required_request_creation_publishes_command(self):
+        inspection = self._create_inspection(
+            source_message_id="evidence-request-publish-review-required",
+            disease=self.leaf_healthy,
+            inference_index=self.leaf_index,
+            organ_type=Inspection.OrganType.LEAF,
+            top1_label="healthy",
+            requires_review=True,
+        )
+
+        publish_result = EvidenceImageCommandPublishResult(
+            published=True,
+            exchange="amq.topic",
+            routing_key=f"tomato.edge.v1.{self.device.identifier}.commands.image-request",
+            payload={},
+        )
+
+        with patch(
+            "apps.inspections.services.publish_evidence_image_request_command",
+            return_value=publish_result,
+        ) as publish_mock:
+            outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+
+        self.assertTrue(outcome.created)
+        publish_mock.assert_called_once()
+
+    @override_settings(EVIDENCE_IMAGE_COMMANDS_ENABLED=True)
+    def test_healthy_inspection_without_review_does_not_publish_command(self):
+        inspection = self._create_inspection(
+            source_message_id="evidence-request-no-publish-healthy",
+            disease=self.leaf_healthy,
+            inference_index=self.leaf_index,
+            organ_type=Inspection.OrganType.LEAF,
+            top1_label="healthy",
+            requires_review=False,
+        )
+
+        with patch("apps.inspections.services.publish_evidence_image_request_command") as publish_mock:
+            outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+
+        self.assertFalse(outcome.created)
+        publish_mock.assert_not_called()
+
+    def test_commands_disabled_keeps_request_pending_without_publishing(self):
+        inspection = self._create_inspection(
+            source_message_id="evidence-request-disabled-no-publish",
+            disease=self.fruit_late_blight,
+            inference_index=self.fruit_index,
+            organ_type=Inspection.OrganType.FRUIT,
+            top1_label="late_blight",
+        )
+
+        with patch("apps.inspections.services.publish_evidence_image_request_command") as publish_mock:
+            outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+
+        self.assertTrue(outcome.created)
+        outcome.evidence_request.refresh_from_db()
+        self.assertEqual(outcome.evidence_request.status, EvidenceImageRequest.Status.PENDING)
+        publish_mock.assert_not_called()
 
 
 @override_settings(

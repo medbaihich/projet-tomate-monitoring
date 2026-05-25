@@ -5,9 +5,11 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+from unittest.mock import patch
 
 from apps.core.management.commands.seed_demo_data import Command as SeedDemoDataCommand
 from apps.devices.models import Device
+from apps.inspections.evidence_commands import EvidenceImageCommandPublishResult
 from apps.inspections.models import EvidenceImageRequest, Inspection, InspectionMatch
 from apps.notifications.models import Notification
 from apps.review.models import Review
@@ -113,6 +115,32 @@ class AIResultIngestionApiTests(APITestCase):
         )
         self.assertEqual(evidence_request.status, EvidenceImageRequest.Status.PENDING)
 
+    @override_settings(EVIDENCE_IMAGE_COMMANDS_ENABLED=True)
+    def test_ingestion_publishes_evidence_command_for_new_review_required_request(self):
+        publish_result = EvidenceImageCommandPublishResult(
+            published=True,
+            exchange="amq.topic",
+            routing_key=f"tomato.edge.v1.{self.device.identifier}.commands.image-request",
+            payload={},
+        )
+
+        with patch(
+            "apps.inspections.services.publish_evidence_image_request_command",
+            return_value=publish_result,
+        ) as publish_mock:
+            response = self._post(
+                self._build_payload(source_message_id="phase6-ingest-publish-once")
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        publish_mock.assert_called_once()
+        published_request = publish_mock.call_args.kwargs["evidence_request"]
+        self.assertEqual(
+            published_request.source_message_id,
+            "phase6-ingest-publish-once",
+        )
+        self.assertEqual(published_request.device.identifier, self.device.identifier)
+
     def test_ingestion_is_idempotent_by_source_message_id(self):
         first_response = self._post(self._build_payload())
         second_response = self._post(
@@ -134,6 +162,34 @@ class AIResultIngestionApiTests(APITestCase):
             EvidenceImageRequest.objects.filter(source_message_id="phase6-ingest-001").count(),
             1,
         )
+
+    @override_settings(EVIDENCE_IMAGE_COMMANDS_ENABLED=True)
+    def test_duplicate_ingestion_replay_does_not_publish_command_again(self):
+        publish_result = EvidenceImageCommandPublishResult(
+            published=True,
+            exchange="amq.topic",
+            routing_key=f"tomato.edge.v1.{self.device.identifier}.commands.image-request",
+            payload={},
+        )
+
+        with patch(
+            "apps.inspections.services.publish_evidence_image_request_command",
+            return_value=publish_result,
+        ) as publish_mock:
+            first_response = self._post(
+                self._build_payload(source_message_id="phase6-ingest-publish-duplicate")
+            )
+            second_response = self._post(
+                self._build_payload(
+                    source_message_id="phase6-ingest-publish-duplicate",
+                    confidence_score=0.55,
+                    top1_label="healthy",
+                )
+            )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+        publish_mock.assert_called_once()
 
     def test_unknown_device_is_rejected_without_creating_inspection(self):
         response = self._post(
@@ -186,4 +242,27 @@ class AIResultIngestionApiTests(APITestCase):
         inspection = Inspection.objects.get(source_message_id="phase6-healthy-no-evidence")
         self.assertFalse(
             EvidenceImageRequest.objects.filter(inspection=inspection).exists()
+        )
+
+    @override_settings(EVIDENCE_IMAGE_COMMANDS_ENABLED=True)
+    def test_publish_failure_does_not_fail_ingestion_and_request_stays_pending(self):
+        with patch(
+            "apps.inspections.services.publish_evidence_image_request_command",
+            side_effect=RuntimeError("rabbitmq unavailable"),
+        ):
+            response = self._post(
+                self._build_payload(source_message_id="phase6-publish-failure")
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        inspection = Inspection.objects.get(source_message_id="phase6-publish-failure")
+        evidence_request = EvidenceImageRequest.objects.get(inspection=inspection)
+        self.assertEqual(evidence_request.status, EvidenceImageRequest.Status.PENDING)
+        self.assertEqual(
+            evidence_request.response_metadata["command_publish"]["status"],
+            "publish_failed",
+        )
+        self.assertIn(
+            "rabbitmq unavailable",
+            evidence_request.response_metadata["command_publish"]["error"],
         )

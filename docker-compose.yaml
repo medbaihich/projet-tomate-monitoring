@@ -153,6 +153,15 @@ services:
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
       AI_WORKER_INGESTION_TOKEN: tomato-ai-worker-dev-token
+      EVIDENCE_IMAGE_UPLOAD_TOKEN: tomato-evidence-upload-dev-token
+      EVIDENCE_IMAGE_COMMANDS_ENABLED: "true"
+      EVIDENCE_IMAGE_COMMAND_RABBITMQ_HOST: rabbitmq
+      EVIDENCE_IMAGE_COMMAND_RABBITMQ_PORT: "5672"
+      EVIDENCE_IMAGE_COMMAND_RABBITMQ_USERNAME: tomato_mqtt
+      EVIDENCE_IMAGE_COMMAND_RABBITMQ_PASSWORD: tomato_mqtt_pass
+      EVIDENCE_IMAGE_COMMAND_RABBITMQ_VHOST: /
+      EVIDENCE_IMAGE_COMMAND_EXCHANGE: amq.topic
+      EVIDENCE_IMAGE_COMMAND_ROUTING_KEY_TEMPLATE: tomato.edge.v1.{device_identifier}.commands.image-request
     volumes:
       - ./ai_assets:/app/ai_assets
     depends_on:
@@ -211,12 +220,13 @@ services:
     command: >
       sh -c "npm run build &&
              npm run preview -- --host 0.0.0.0 --port 3000"
-    ports:
-      - "3000:3000"
+    # Frontend is intentionally exposed through Traefik on http://localhost
+    # instead of binding a direct host port such as 3001:3000.
     networks:
       - web
     labels:
       - "traefik.enable=true"
+      - "com.tomato.frontend.exposure=traefik-only"
 
       # ---------- /** → frontend (catch-all, lowest priority) ----------
       - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"

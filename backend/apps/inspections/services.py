@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +12,9 @@ from django.utils.text import slugify
 from apps.catalog.models import Disease, normalize_ai_label
 from apps.devices.models import Device
 from apps.inference.models import InferenceIndex
+from apps.inspections.evidence_commands import (
+    publish_evidence_image_request_command,
+)
 from apps.inspections.models import (
     EvidenceImageRequest,
     Inspection,
@@ -22,6 +26,8 @@ from apps.notifications.services import (
     maybe_create_disease_alert_notification,
     schedule_dashboard_refresh_event,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,6 +399,8 @@ def maybe_create_evidence_image_request_for_inspection(inspection):
         inspection=inspection,
         defaults=request_defaults,
     )
+    if created:
+        _schedule_evidence_image_request_command_publish(evidence_request.id)
     return EvidenceImageRequestOutcome(
         evidence_request=evidence_request,
         created=created,
@@ -531,6 +539,68 @@ def _resolve_evidence_request_reason(inspection):
     return ""
 
 
+def _schedule_evidence_image_request_command_publish(evidence_request_id):
+    if not getattr(settings, "EVIDENCE_IMAGE_COMMANDS_ENABLED", False):
+        return
+
+    transaction.on_commit(
+        lambda: _publish_evidence_image_request_command_after_commit(evidence_request_id)
+    )
+
+
+def _publish_evidence_image_request_command_after_commit(evidence_request_id):
+    evidence_request = (
+        EvidenceImageRequest.objects.select_related("inspection", "device")
+        .filter(pk=evidence_request_id)
+        .first()
+    )
+    if evidence_request is None:
+        return
+
+    if evidence_request.status != EvidenceImageRequest.Status.PENDING:
+        logger.info(
+            "Skipping evidence image command publish for request %s because status is %s.",
+            evidence_request.id,
+            evidence_request.status,
+        )
+        return
+
+    try:
+        publish_result = publish_evidence_image_request_command(
+            evidence_request=evidence_request,
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to publish evidence image request command for request %s.",
+            evidence_request.id,
+        )
+        _store_evidence_command_publish_metadata(
+            evidence_request=evidence_request,
+            metadata={
+                "status": "publish_failed",
+                "attempted_at": timezone.now().isoformat(),
+                "error": _format_exception_message(exc),
+            },
+        )
+        return
+
+    logger.info(
+        "Published evidence image request command for request %s to %s (%s).",
+        evidence_request.id,
+        publish_result.routing_key,
+        publish_result.exchange,
+    )
+    _store_evidence_command_publish_metadata(
+        evidence_request=evidence_request,
+        metadata={
+            "status": "published",
+            "published_at": timezone.now().isoformat(),
+            "exchange": publish_result.exchange,
+            "routing_key": publish_result.routing_key,
+        },
+    )
+
+
 def _extract_evidence_image_id(inspection):
     worker_extra_metadata = ((inspection.extra_metadata or {}).get("worker_extra_metadata") or {})
     capture_artifact = worker_extra_metadata.get("capture_artifact") or {}
@@ -544,6 +614,21 @@ def _extract_local_image_ref(inspection):
     worker_extra_metadata = ((inspection.extra_metadata or {}).get("worker_extra_metadata") or {})
     capture_artifact = worker_extra_metadata.get("capture_artifact") or {}
     return str(capture_artifact.get("local_image_ref", "")).strip()
+
+
+def _store_evidence_command_publish_metadata(*, evidence_request, metadata):
+    current_metadata = dict(evidence_request.response_metadata or {})
+    current_metadata["command_publish"] = metadata
+    EvidenceImageRequest.objects.filter(pk=evidence_request.pk).update(
+        response_metadata=current_metadata,
+    )
+
+
+def _format_exception_message(exc):
+    message = str(exc).strip()
+    if message:
+        return message
+    return exc.__class__.__name__
 
 
 def _compute_sha256_for_uploaded_file(image_file):
