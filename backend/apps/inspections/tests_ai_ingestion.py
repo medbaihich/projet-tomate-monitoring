@@ -8,7 +8,7 @@ from rest_framework.test import APITestCase
 
 from apps.core.management.commands.seed_demo_data import Command as SeedDemoDataCommand
 from apps.devices.models import Device
-from apps.inspections.models import Inspection, InspectionMatch
+from apps.inspections.models import EvidenceImageRequest, Inspection, InspectionMatch
 from apps.notifications.models import Notification
 from apps.review.models import Review
 
@@ -103,6 +103,15 @@ class AIResultIngestionApiTests(APITestCase):
         self.assertTrue(inspection.extra_metadata["ai_result"]["requires_review"])
         self.assertEqual(Notification.objects.filter(inspection=inspection).count(), 1)
         self.assertEqual(Review.objects.filter(inspection=inspection).count(), 0)
+        evidence_request = EvidenceImageRequest.objects.get(inspection=inspection)
+        self.assertEqual(evidence_request.device, self.device)
+        self.assertEqual(evidence_request.source_message_id, inspection.source_message_id)
+        self.assertEqual(evidence_request.image_id, "fruit-001")
+        self.assertEqual(
+            evidence_request.reason,
+            EvidenceImageRequest.Reason.REVIEW_REQUIRED,
+        )
+        self.assertEqual(evidence_request.status, EvidenceImageRequest.Status.PENDING)
 
     def test_ingestion_is_idempotent_by_source_message_id(self):
         first_response = self._post(self._build_payload())
@@ -120,6 +129,10 @@ class AIResultIngestionApiTests(APITestCase):
                 inspection__source_message_id="phase6-ingest-001"
             ).count(),
             2,
+        )
+        self.assertEqual(
+            EvidenceImageRequest.objects.filter(source_message_id="phase6-ingest-001").count(),
+            1,
         )
 
     def test_unknown_device_is_rejected_without_creating_inspection(self):
@@ -145,4 +158,32 @@ class AIResultIngestionApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertFalse(
             Inspection.objects.filter(source_message_id="phase6-invalid-token").exists()
+        )
+
+    def test_healthy_ingestion_without_review_does_not_create_evidence_request(self):
+        response = self._post(
+            self._build_payload(
+                source_message_id="phase6-healthy-no-evidence",
+                organ_type=Inspection.OrganType.LEAF,
+                top1_label="healthy",
+                final_label="healthy",
+                confidence_score=0.84,
+                index_used="leaf_faiss.index",
+                metadata_used="leaf_metadata.csv",
+                requires_review=False,
+                matches=[
+                    {
+                        "rank_order": 1,
+                        "matched_label": "healthy",
+                        "similarity_score": 0.84,
+                        "metadata_json": {"source_row": 1},
+                    }
+                ],
+            )
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        inspection = Inspection.objects.get(source_message_id="phase6-healthy-no-evidence")
+        self.assertFalse(
+            EvidenceImageRequest.objects.filter(inspection=inspection).exists()
         )

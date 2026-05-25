@@ -1,9 +1,12 @@
 from datetime import timedelta
+import hashlib
+import tempfile
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
@@ -15,9 +18,13 @@ from apps.catalog.models import Disease, DiseaseMapProfile
 from apps.core.management.commands.seed_demo_data import Command as SeedDemoDataCommand
 from apps.devices.models import Device, Greenhouse, Line, Site, Zone
 from apps.inference.models import InferenceIndex, ModelVersion
-from apps.inspections.models import Inspection
+from apps.inspections.models import EvidenceImageRequest, Inspection, InspectionEvidenceImage
 from apps.inspections.serializers import InspectionCreateSerializer
-from apps.inspections.services import create_inspection_with_matches, ingest_ai_result_payload
+from apps.inspections.services import (
+    create_inspection_with_matches,
+    ingest_ai_result_payload,
+    maybe_create_evidence_image_request_for_inspection,
+)
 
 
 class InspectionConfidenceScoreTestMixin:
@@ -1043,4 +1050,450 @@ class InspectionDashboardRefreshTests(TestCase):
         self.assertFalse(outcome.created)
         self.assertTrue(outcome.duplicate)
         refresh_mock.assert_not_called()
+
+
+class EvidenceImageRequestServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        SeedDemoDataCommand().handle()
+        cls.device = Device.objects.get(identifier="demo-device-001")
+        cls.leaf_index = InferenceIndex.objects.get(name="leaf-demo-index")
+        cls.fruit_index = InferenceIndex.objects.get(name="fruit-demo-index")
+        cls.leaf_healthy = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="healthy",
+        )
+        cls.fruit_late_blight = Disease.objects.get(
+            organ_type=Disease.OrganType.FRUIT,
+            ai_label="late_blight",
+        )
+        cls.now = timezone.now().replace(microsecond=0)
+
+    def _create_inspection(
+        self,
+        *,
+        source_message_id,
+        disease,
+        inference_index,
+        organ_type,
+        top1_label,
+        requires_review=False,
+        worker_extra_metadata=None,
+    ):
+        return Inspection.objects.create(
+            device=self.device,
+            inference_index=inference_index,
+            predicted_disease=disease,
+            organ_type=organ_type,
+            status=Inspection.Status.NEW,
+            processing_status=Inspection.ProcessingStatus.COMPLETED,
+            source_message_id=source_message_id,
+            top1_label=top1_label,
+            confidence_score=0.91,
+            captured_at=self.now,
+            received_at=self.now,
+            processed_at=self.now + timedelta(minutes=1),
+            extra_metadata={
+                "ai_result": {
+                    "requires_review": requires_review,
+                },
+                "worker_extra_metadata": worker_extra_metadata or {},
+            },
+        )
+
+    def test_disease_positive_inspection_creates_pending_evidence_request(self):
+        inspection = self._create_inspection(
+            source_message_id="evidence-request-disease-positive",
+            disease=self.fruit_late_blight,
+            inference_index=self.fruit_index,
+            organ_type=Inspection.OrganType.FRUIT,
+            top1_label="late_blight",
+            worker_extra_metadata={"image_id": "fruit-image-001"},
+        )
+
+        first_outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+        second_outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+
+        self.assertTrue(first_outcome.created)
+        self.assertFalse(second_outcome.created)
+        self.assertEqual(
+            EvidenceImageRequest.objects.filter(inspection=inspection).count(),
+            1,
+        )
+
+        evidence_request = EvidenceImageRequest.objects.get(inspection=inspection)
+        self.assertEqual(
+            evidence_request.reason,
+            EvidenceImageRequest.Reason.DISEASE_ALERT,
+        )
+        self.assertEqual(evidence_request.status, EvidenceImageRequest.Status.PENDING)
+        self.assertEqual(evidence_request.device, self.device)
+        self.assertEqual(evidence_request.source_message_id, inspection.source_message_id)
+        self.assertEqual(evidence_request.image_id, "fruit-image-001")
+        self.assertEqual(evidence_request.local_image_ref, "")
+
+    def test_requires_review_inspection_creates_pending_review_required_request(self):
+        inspection = self._create_inspection(
+            source_message_id="evidence-request-review-required",
+            disease=self.leaf_healthy,
+            inference_index=self.leaf_index,
+            organ_type=Inspection.OrganType.LEAF,
+            top1_label="healthy",
+            requires_review=True,
+            worker_extra_metadata={
+                "image_id": "leaf-image-001",
+                "capture_artifact": {
+                    "local_image_ref": "cap-leaf-001",
+                },
+            },
+        )
+
+        outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+
+        self.assertTrue(outcome.created)
+        evidence_request = EvidenceImageRequest.objects.get(inspection=inspection)
+        self.assertEqual(
+            evidence_request.reason,
+            EvidenceImageRequest.Reason.REVIEW_REQUIRED,
+        )
+        self.assertEqual(evidence_request.local_image_ref, "cap-leaf-001")
+        self.assertEqual(evidence_request.image_id, "leaf-image-001")
+
+    def test_healthy_inspection_without_review_does_not_create_request(self):
+        inspection = self._create_inspection(
+            source_message_id="evidence-request-healthy-no-review",
+            disease=self.leaf_healthy,
+            inference_index=self.leaf_index,
+            organ_type=Inspection.OrganType.LEAF,
+            top1_label="healthy",
+            requires_review=False,
+        )
+
+        outcome = maybe_create_evidence_image_request_for_inspection(inspection)
+
+        self.assertFalse(outcome.created)
+        self.assertIsNone(outcome.evidence_request)
+        self.assertFalse(
+            EvidenceImageRequest.objects.filter(inspection=inspection).exists()
+        )
+
+    def test_review_required_has_priority_over_disease_alert(self):
+        inspection = self._create_inspection(
+            source_message_id="evidence-request-priority-review",
+            disease=self.fruit_late_blight,
+            inference_index=self.fruit_index,
+            organ_type=Inspection.OrganType.FRUIT,
+            top1_label="late_blight",
+            requires_review=True,
+        )
+
+        maybe_create_evidence_image_request_for_inspection(inspection)
+
+        evidence_request = EvidenceImageRequest.objects.get(inspection=inspection)
+        self.assertEqual(
+            evidence_request.reason,
+            EvidenceImageRequest.Reason.REVIEW_REQUIRED,
+        )
+
+
+@override_settings(
+    EVIDENCE_IMAGE_UPLOAD_TOKEN="phase9-evidence-upload-token",
+    MEDIA_URL="/media/",
+)
+class EvidenceImageUploadApiTests(APITestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._temp_media_dir = tempfile.TemporaryDirectory()
+        cls._media_override = override_settings(MEDIA_ROOT=cls._temp_media_dir.name)
+        cls._media_override.enable()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._media_override.disable()
+        cls._temp_media_dir.cleanup()
+        super().tearDownClass()
+
+    @classmethod
+    def setUpTestData(cls):
+        SeedDemoDataCommand().handle()
+        cls.user = get_user_model().objects.get(username="admin")
+        cls.device = Device.objects.get(identifier="demo-device-001")
+        cls.leaf_index = InferenceIndex.objects.get(name="leaf-demo-index")
+        cls.leaf_healthy = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="healthy",
+        )
+        cls.now = timezone.now().replace(microsecond=0)
+        cls.url = reverse("inspection-evidence-image-upload")
+
+    def setUp(self):
+        self._sequence = 0
+
+    def _next_source_message_id(self):
+        self._sequence += 1
+        return f"evidence-upload-source-{self._sequence}"
+
+    def _create_pending_request(self, *, source_message_id=None):
+        source_message_id = source_message_id or self._next_source_message_id()
+        inspection = Inspection.objects.create(
+            device=self.device,
+            inference_index=self.leaf_index,
+            predicted_disease=self.leaf_healthy,
+            organ_type=Inspection.OrganType.LEAF,
+            status=Inspection.Status.NEW,
+            processing_status=Inspection.ProcessingStatus.COMPLETED,
+            source_message_id=source_message_id,
+            top1_label="healthy",
+            confidence_score=0.85,
+            captured_at=self.now,
+            received_at=self.now,
+            processed_at=self.now + timedelta(minutes=1),
+            extra_metadata={"ai_result": {"requires_review": True}},
+        )
+        evidence_request = EvidenceImageRequest.objects.create(
+            inspection=inspection,
+            device=self.device,
+            source_message_id=source_message_id,
+            image_id=f"{source_message_id}-image",
+            local_image_ref=f"{source_message_id}-ref",
+            reason=EvidenceImageRequest.Reason.REVIEW_REQUIRED,
+            status=EvidenceImageRequest.Status.PENDING,
+            request_payload={"source_message_id": source_message_id},
+        )
+        return inspection, evidence_request
+
+    def _make_upload_file(self, *, name="evidence.jpg", content=b"fake-image-bytes"):
+        return SimpleUploadedFile(name, content, content_type="image/jpeg")
+
+    def _checksum_for(self, content):
+        return hashlib.sha256(content).hexdigest()
+
+    def _post_upload(self, data, *, token="phase9-evidence-upload-token"):
+        headers = {}
+        if token is not None:
+            headers["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+        return self.client.post(
+            self.url,
+            data=data,
+            format="multipart",
+            **headers,
+        )
+
+    def test_missing_token_is_rejected(self):
+        _, evidence_request = self._create_pending_request()
+
+        response = self._post_upload(
+            {
+                "request_id": str(evidence_request.id),
+                "source_message_id": evidence_request.source_message_id,
+                "device_identifier": self.device.identifier,
+                "image": self._make_upload_file(),
+            },
+            token=None,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_wrong_token_is_rejected(self):
+        _, evidence_request = self._create_pending_request()
+
+        response = self._post_upload(
+            {
+                "request_id": str(evidence_request.id),
+                "source_message_id": evidence_request.source_message_id,
+                "device_identifier": self.device.identifier,
+                "image": self._make_upload_file(),
+            },
+            token="wrong-token",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unknown_request_id_is_rejected(self):
+        response = self._post_upload(
+            {
+                "request_id": "f6c2c90f-a430-4f92-b9f9-0ef0321b75d0",
+                "source_message_id": "missing-request-source",
+                "device_identifier": self.device.identifier,
+                "image": self._make_upload_file(),
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("request_id", response.data)
+
+    def test_source_message_id_mismatch_is_rejected(self):
+        _, evidence_request = self._create_pending_request()
+
+        response = self._post_upload(
+            {
+                "request_id": str(evidence_request.id),
+                "source_message_id": "different-source-message-id",
+                "device_identifier": self.device.identifier,
+                "image": self._make_upload_file(),
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("source_message_id", response.data)
+
+    def test_device_identifier_mismatch_is_rejected(self):
+        _, evidence_request = self._create_pending_request()
+
+        response = self._post_upload(
+            {
+                "request_id": str(evidence_request.id),
+                "source_message_id": evidence_request.source_message_id,
+                "device_identifier": "other-device-001",
+                "image": self._make_upload_file(),
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("device_identifier", response.data)
+
+    def test_missing_file_is_rejected(self):
+        _, evidence_request = self._create_pending_request()
+
+        response = self._post_upload(
+            {
+                "request_id": str(evidence_request.id),
+                "source_message_id": evidence_request.source_message_id,
+                "device_identifier": self.device.identifier,
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("image", response.data)
+
+    def test_checksum_mismatch_is_rejected(self):
+        _, evidence_request = self._create_pending_request()
+        file_content = b"phase9-evidence-image"
+
+        response = self._post_upload(
+            {
+                "request_id": str(evidence_request.id),
+                "source_message_id": evidence_request.source_message_id,
+                "device_identifier": self.device.identifier,
+                "image_sha256": "0" * 64,
+                "image": self._make_upload_file(content=file_content),
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("image_sha256", response.data)
+
+    def test_valid_upload_creates_evidence_image_and_marks_request_uploaded(self):
+        inspection, evidence_request = self._create_pending_request()
+        file_content = b"phase9-valid-evidence-image"
+        checksum = self._checksum_for(file_content)
+
+        response = self._post_upload(
+            {
+                "request_id": str(evidence_request.id),
+                "source_message_id": evidence_request.source_message_id,
+                "device_identifier": self.device.identifier,
+                "image_sha256": checksum,
+                "image": self._make_upload_file(content=file_content),
+            }
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            response.data,
+            {
+                "uploaded": True,
+                "duplicate": False,
+                "inspection_id": str(inspection.id),
+                "request_id": str(evidence_request.id),
+                "source_message_id": evidence_request.source_message_id,
+                "evidence_image_id": response.data["evidence_image_id"],
+            },
+        )
+
+        evidence_request.refresh_from_db()
+        evidence_image = InspectionEvidenceImage.objects.get(request=evidence_request)
+        self.assertEqual(evidence_request.status, EvidenceImageRequest.Status.UPLOADED)
+        self.assertIsNotNone(evidence_request.uploaded_at)
+        self.assertEqual(evidence_request.response_metadata["image_sha256"], checksum)
+        self.assertEqual(evidence_image.inspection, inspection)
+        self.assertEqual(evidence_image.device, self.device)
+        self.assertEqual(evidence_image.source_message_id, evidence_request.source_message_id)
+        self.assertEqual(evidence_image.image_sha256, checksum)
+        self.assertEqual(evidence_image.original_filename, "evidence.jpg")
+        self.assertEqual(evidence_image.mime_type, "image/jpeg")
+        self.assertEqual(evidence_image.size_bytes, len(file_content))
+
+    def test_repeated_upload_returns_idempotent_success_without_duplicate_image(self):
+        _, evidence_request = self._create_pending_request()
+        file_content = b"phase9-duplicate-evidence-image"
+        checksum = self._checksum_for(file_content)
+
+        first_response = self._post_upload(
+            {
+                "request_id": str(evidence_request.id),
+                "source_message_id": evidence_request.source_message_id,
+                "device_identifier": self.device.identifier,
+                "image_sha256": checksum,
+                "image": self._make_upload_file(content=file_content),
+            }
+        )
+        second_response = self._post_upload(
+            {
+                "request_id": str(evidence_request.id),
+                "source_message_id": evidence_request.source_message_id,
+                "device_identifier": self.device.identifier,
+                "image_sha256": checksum,
+                "image": self._make_upload_file(content=file_content),
+            }
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(second_response.data["uploaded"])
+        self.assertTrue(second_response.data["duplicate"])
+        self.assertEqual(
+            InspectionEvidenceImage.objects.filter(request=evidence_request).count(),
+            1,
+        )
+
+    def test_inspection_detail_includes_pending_evidence_summary(self):
+        inspection, _ = self._create_pending_request(source_message_id="inspection-detail-pending")
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(reverse("inspection-detail", args=[inspection.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["evidence_request_status"], EvidenceImageRequest.Status.PENDING)
+        self.assertEqual(response.data["evidence_request_reason"], EvidenceImageRequest.Reason.REVIEW_REQUIRED)
+        self.assertIsNone(response.data["evidence_image_status"])
+        self.assertIsNone(response.data["evidence_image_url"])
+
+    def test_inspection_detail_includes_uploaded_evidence_summary(self):
+        inspection, evidence_request = self._create_pending_request(source_message_id="inspection-detail-uploaded")
+        InspectionEvidenceImage.objects.create(
+            inspection=inspection,
+            request=evidence_request,
+            device=self.device,
+            source_message_id=inspection.source_message_id,
+            image=self._make_upload_file(name="uploaded.jpg", content=b"uploaded-evidence"),
+            original_filename="uploaded.jpg",
+            mime_type="image/jpeg",
+            size_bytes=len(b"uploaded-evidence"),
+            image_sha256=self._checksum_for(b"uploaded-evidence"),
+            uploaded_at=self.now + timedelta(minutes=2),
+            metadata={},
+        )
+        evidence_request.status = EvidenceImageRequest.Status.UPLOADED
+        evidence_request.uploaded_at = self.now + timedelta(minutes=2)
+        evidence_request.save(update_fields=["status", "uploaded_at"])
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(reverse("inspection-detail", args=[inspection.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["evidence_request_status"], EvidenceImageRequest.Status.UPLOADED)
+        self.assertEqual(response.data["evidence_image_status"], EvidenceImageRequest.Status.UPLOADED)
+        self.assertTrue(response.data["evidence_image_url"].endswith("/uploaded.jpg"))
 

@@ -99,6 +99,8 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = env("DJANGO_MEDIA_URL", "/media/")
+MEDIA_ROOT = Path(env("DJANGO_MEDIA_ROOT", str(BASE_DIR / "media"))).resolve()
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
@@ -139,4 +141,12 @@ CHANNEL_LAYERS = {
 AI_WORKER_INGESTION_TOKEN = env(
     "AI_WORKER_INGESTION_TOKEN",
     "tomato-ai-worker-dev-token",
+)
+EVIDENCE_IMAGE_UPLOAD_TOKEN = env(
+    "EVIDENCE_IMAGE_UPLOAD_TOKEN",
+    "tomato-evidence-upload-dev-token",
+)
+EVIDENCE_IMAGE_UPLOAD_MAX_BYTES = env_int(
+    "EVIDENCE_IMAGE_UPLOAD_MAX_BYTES",
+    10 * 1024 * 1024,
 )

@@ -1,15 +1,24 @@
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from django.core.exceptions import ValidationError
+from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from django.utils.text import slugify
 
 from apps.catalog.models import Disease, normalize_ai_label
 from apps.devices.models import Device
 from apps.inference.models import InferenceIndex
-from apps.inspections.models import Inspection, InspectionMatch
+from apps.inspections.models import (
+    EvidenceImageRequest,
+    Inspection,
+    InspectionEvidenceImage,
+    InspectionMatch,
+)
 from apps.notifications.services import (
+    is_inspection_alert_eligible,
     maybe_create_disease_alert_notification,
     schedule_dashboard_refresh_event,
 )
@@ -19,6 +28,20 @@ from apps.notifications.services import (
 class AIResultIngestionOutcome:
     inspection: Inspection
     created: bool
+    duplicate: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceImageRequestOutcome:
+    evidence_request: EvidenceImageRequest | None
+    created: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceImageUploadOutcome:
+    evidence_request: EvidenceImageRequest
+    evidence_image: InspectionEvidenceImage
+    uploaded: bool
     duplicate: bool
 
 
@@ -83,6 +106,8 @@ def create_inspection_with_matches(*, inspection_data, matches_data=None):
             "device",
             "inference_index",
             "predicted_disease",
+            "evidence_request",
+            "evidence_image",
         )
         .prefetch_related("matches__disease")
         .get(pk=inspection.pk)
@@ -217,6 +242,8 @@ def ingest_ai_result_payload(*, ai_result_data):
             )
         raise exc
 
+    maybe_create_evidence_image_request_for_inspection(inspection)
+
     return AIResultIngestionOutcome(
         inspection=inspection,
         created=True,
@@ -334,3 +361,212 @@ def _build_ai_result_extra_metadata(ai_result_data):
         },
         "worker_extra_metadata": worker_extra_metadata,
     }
+
+
+def maybe_create_evidence_image_request_for_inspection(inspection):
+    reason = _resolve_evidence_request_reason(inspection)
+    if not reason:
+        return EvidenceImageRequestOutcome(evidence_request=None, created=False)
+
+    image_id = _extract_evidence_image_id(inspection)
+    local_image_ref = _extract_local_image_ref(inspection)
+    request_defaults = {
+        "device": inspection.device,
+        "source_message_id": inspection.source_message_id,
+        "image_id": image_id,
+        "local_image_ref": local_image_ref,
+        "reason": reason,
+        "status": EvidenceImageRequest.Status.PENDING,
+        "requested_at": timezone.now(),
+        # Review-required takes priority when both conditions apply because
+        # visual evidence is most critical for human verification workflows.
+        "request_payload": {
+            "source_message_id": inspection.source_message_id,
+            "device_identifier": inspection.device.identifier,
+            "image_id": image_id,
+            "local_image_ref": local_image_ref,
+            "reason": reason,
+        },
+    }
+
+    evidence_request, created = EvidenceImageRequest.objects.get_or_create(
+        inspection=inspection,
+        defaults=request_defaults,
+    )
+    return EvidenceImageRequestOutcome(
+        evidence_request=evidence_request,
+        created=created,
+    )
+
+
+def store_evidence_image_upload(
+    *,
+    request_id,
+    source_message_id,
+    device_identifier,
+    image_file,
+    client_image_sha256="",
+):
+    evidence_request = (
+        EvidenceImageRequest.objects.select_related(
+            "inspection",
+            "device",
+        )
+        .filter(pk=request_id)
+        .first()
+    )
+    if evidence_request is None:
+        raise ValidationError({"request_id": "Evidence image request does not exist."})
+
+    if source_message_id != evidence_request.source_message_id:
+        raise ValidationError(
+            {"source_message_id": "Source message ID does not match the evidence image request."}
+        )
+
+    if device_identifier != evidence_request.device.identifier:
+        raise ValidationError(
+            {"device_identifier": "Device identifier does not match the evidence image request."}
+        )
+
+    max_size_bytes = getattr(settings, "EVIDENCE_IMAGE_UPLOAD_MAX_BYTES", 0)
+    if max_size_bytes and image_file.size > max_size_bytes:
+        raise ValidationError(
+            {"image": f"Uploaded file exceeds the maximum size of {max_size_bytes} bytes."}
+        )
+
+    computed_sha256 = _compute_sha256_for_uploaded_file(image_file)
+    if client_image_sha256 and client_image_sha256 != computed_sha256:
+        raise ValidationError(
+            {"image_sha256": "Provided image checksum does not match the uploaded file."}
+        )
+
+    existing_image = _get_optional_related(evidence_request, "evidence_image")
+    if existing_image is not None:
+        if existing_image.image_sha256 != computed_sha256:
+            raise ValidationError(
+                {
+                    "image": (
+                        "Uploaded file does not match the evidence image already stored for this request."
+                    )
+                }
+            )
+
+        if evidence_request.status != EvidenceImageRequest.Status.UPLOADED or evidence_request.uploaded_at is None:
+            uploaded_at = existing_image.uploaded_at or timezone.now()
+            EvidenceImageRequest.objects.filter(pk=evidence_request.pk).update(
+                status=EvidenceImageRequest.Status.UPLOADED,
+                uploaded_at=uploaded_at,
+                failure_reason="",
+                response_metadata=_build_evidence_response_metadata(
+                    image=existing_image,
+                    image_sha256=computed_sha256,
+                ),
+            )
+            evidence_request.refresh_from_db()
+
+        return EvidenceImageUploadOutcome(
+            evidence_request=evidence_request,
+            evidence_image=existing_image,
+            uploaded=True,
+            duplicate=True,
+        )
+
+    if evidence_request.status != EvidenceImageRequest.Status.PENDING:
+        raise ValidationError(
+            {
+                "request_id": (
+                    f"Evidence image request is not pending. Current status is '{evidence_request.status}'."
+                )
+            }
+        )
+
+    original_filename = Path(getattr(image_file, "name", "")).name or "evidence-upload.bin"
+    uploaded_at = timezone.now()
+    image_file.seek(0)
+
+    with transaction.atomic():
+        evidence_image = InspectionEvidenceImage.objects.create(
+            inspection=evidence_request.inspection,
+            request=evidence_request,
+            device=evidence_request.device,
+            source_message_id=evidence_request.source_message_id,
+            image=image_file,
+            original_filename=original_filename,
+            mime_type=getattr(image_file, "content_type", "") or "",
+            size_bytes=image_file.size,
+            image_sha256=computed_sha256,
+            uploaded_at=uploaded_at,
+            metadata={
+                "request_reason": evidence_request.reason,
+            },
+        )
+        EvidenceImageRequest.objects.filter(pk=evidence_request.pk).update(
+            status=EvidenceImageRequest.Status.UPLOADED,
+            uploaded_at=uploaded_at,
+            failure_reason="",
+            response_metadata=_build_evidence_response_metadata(
+                image=evidence_image,
+                image_sha256=computed_sha256,
+            ),
+        )
+
+    evidence_request.refresh_from_db()
+    evidence_image.refresh_from_db()
+    return EvidenceImageUploadOutcome(
+        evidence_request=evidence_request,
+        evidence_image=evidence_image,
+        uploaded=True,
+        duplicate=False,
+    )
+
+
+def _resolve_evidence_request_reason(inspection):
+    ai_result_metadata = ((inspection.extra_metadata or {}).get("ai_result") or {})
+    if bool(ai_result_metadata.get("requires_review", False)):
+        return EvidenceImageRequest.Reason.REVIEW_REQUIRED
+
+    if is_inspection_alert_eligible(inspection):
+        return EvidenceImageRequest.Reason.DISEASE_ALERT
+
+    return ""
+
+
+def _extract_evidence_image_id(inspection):
+    worker_extra_metadata = ((inspection.extra_metadata or {}).get("worker_extra_metadata") or {})
+    capture_artifact = worker_extra_metadata.get("capture_artifact") or {}
+    return (
+        str(worker_extra_metadata.get("image_id", "")).strip()
+        or str(capture_artifact.get("image_id", "")).strip()
+    )
+
+
+def _extract_local_image_ref(inspection):
+    worker_extra_metadata = ((inspection.extra_metadata or {}).get("worker_extra_metadata") or {})
+    capture_artifact = worker_extra_metadata.get("capture_artifact") or {}
+    return str(capture_artifact.get("local_image_ref", "")).strip()
+
+
+def _compute_sha256_for_uploaded_file(image_file):
+    hasher = hashlib.sha256()
+    image_file.seek(0)
+    for chunk in image_file.chunks():
+        hasher.update(chunk)
+    image_file.seek(0)
+    return hasher.hexdigest()
+
+
+def _build_evidence_response_metadata(*, image, image_sha256):
+    return {
+        "evidence_image_id": str(image.id),
+        "image_sha256": image_sha256,
+        "original_filename": image.original_filename,
+        "mime_type": image.mime_type,
+        "size_bytes": image.size_bytes,
+    }
+
+
+def _get_optional_related(instance, related_name):
+    try:
+        return getattr(instance, related_name)
+    except ObjectDoesNotExist:
+        return None
