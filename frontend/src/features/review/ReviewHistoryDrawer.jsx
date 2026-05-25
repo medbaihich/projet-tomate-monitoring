@@ -15,6 +15,7 @@ import RuleRoundedIcon from '@mui/icons-material/RuleRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import DrawerCloseButton from '@/components/ui/DrawerCloseButton';
 import StatusChip from '@/components/ui/StatusChip';
+import EvidenceImagePreview from '@/features/inspections/EvidenceImagePreview';
 import { useThemeMode } from '@/theme-mode-context';
 import {
   formatReviewConfidence,
@@ -285,6 +286,16 @@ export default function ReviewHistoryDrawer({
                 >
                   The linked inspection record is not currently available. Review record details are still shown below.
                 </Alert>
+              ) : null}
+
+              {inspection ? (
+                <EvidenceImagePreview
+                  title="Evidence image"
+                  imageUrl={inspection.evidence_image_url}
+                  requestStatus={inspection.evidence_request_status}
+                  imageStatus={inspection.evidence_image_status}
+                  requestReason={inspection.evidence_request_reason}
+                />
               ) : null}
 
               <SectionCard icon={<RuleRoundedIcon fontSize="small" />} title="Review outcome" isLightMode={isLightMode}>

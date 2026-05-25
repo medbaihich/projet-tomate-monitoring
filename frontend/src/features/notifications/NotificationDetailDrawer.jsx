@@ -19,6 +19,7 @@ import DrawerCloseButton from '@/components/ui/DrawerCloseButton';
 import StateBlock from '@/components/ui/StateBlock';
 import StatusChip from '@/components/ui/StatusChip';
 import { formatConfidencePercentage } from '@/features/dashboard/utils';
+import EvidenceImagePreview from '@/features/inspections/EvidenceImagePreview';
 import {
   formatInspectionDateTime,
   resolveInspectionDeviceLabel,
@@ -343,6 +344,14 @@ export default function NotificationDetailDrawer({
                 }}
               >
                 <Stack spacing={1.25}>
+                  <EvidenceImagePreview
+                    title="Evidence image"
+                    imageUrl={inspection?.evidence_image_url}
+                    requestStatus={inspection?.evidence_request_status}
+                    imageStatus={inspection?.evidence_image_status}
+                    requestReason={inspection?.evidence_request_reason}
+                  />
+
                   <SectionCard
                     icon={<ReportProblemRoundedIcon fontSize="small" />}
                     title="Alert Summary"
