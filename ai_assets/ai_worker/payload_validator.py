@@ -33,6 +33,7 @@ class ValidatedPayload:
     l2_normalized: bool
     vector_norm: float | None
     feature_vector: list[float]
+    capture_artifact: dict[str, Any] | None
     edge_metadata: dict[str, Any] | None
     routing_device_identifier: str | None
     computed_vector_norm: float
@@ -200,6 +201,10 @@ def validate_payload_bytes(
             raise PayloadValidationError("image_id must be a non-empty string when present")
         image_id = image_id.strip()
 
+    capture_artifact = payload.get("capture_artifact")
+    if capture_artifact is not None and not isinstance(capture_artifact, dict):
+        raise PayloadValidationError("capture_artifact must be an object when present")
+
     edge_metadata = payload.get("edge_metadata")
     if edge_metadata is not None and not isinstance(edge_metadata, dict):
         raise PayloadValidationError("edge_metadata must be an object when present")
@@ -227,6 +232,7 @@ def validate_payload_bytes(
         l2_normalized=l2_normalized,
         vector_norm=vector_norm,
         feature_vector=feature_vector,
+        capture_artifact=capture_artifact,
         edge_metadata=edge_metadata,
         routing_device_identifier=routing_device_identifier,
         computed_vector_norm=computed_norm,

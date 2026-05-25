@@ -20,3 +20,19 @@ class HasValidAIWorkerIngestionToken(BasePermission):
             return False
 
         return secrets.compare_digest(token, configured_token)
+
+
+class HasValidEvidenceImageUploadToken(BasePermission):
+    message = "Invalid evidence image upload token."
+
+    def has_permission(self, request, view):
+        configured_token = getattr(settings, "EVIDENCE_IMAGE_UPLOAD_TOKEN", "")
+        if not configured_token:
+            return False
+
+        authorization_header = request.headers.get("Authorization", "")
+        scheme, _, token = authorization_header.partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            return False
+
+        return secrets.compare_digest(token, configured_token)

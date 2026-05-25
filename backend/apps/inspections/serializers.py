@@ -1,9 +1,15 @@
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 
 from apps.catalog.models import Disease
 from apps.devices.models import Device
 from apps.inference.models import InferenceIndex
-from apps.inspections.models import Inspection, InspectionMatch
+from apps.inspections.models import (
+    EvidenceImageRequest,
+    Inspection,
+    InspectionEvidenceImage,
+    InspectionMatch,
+)
 
 
 class InspectionMatchSerializer(serializers.ModelSerializer):
@@ -54,6 +60,10 @@ class InspectionMatchCreateSerializer(serializers.ModelSerializer):
 
 class InspectionSerializer(serializers.ModelSerializer):
     matches = InspectionMatchSerializer(many=True, read_only=True)
+    evidence_request_status = serializers.SerializerMethodField()
+    evidence_request_reason = serializers.SerializerMethodField()
+    evidence_image_status = serializers.SerializerMethodField()
+    evidence_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Inspection
@@ -73,10 +83,44 @@ class InspectionSerializer(serializers.ModelSerializer):
             "processed_at",
             "extra_metadata",
             "matches",
+            "evidence_request_status",
+            "evidence_request_reason",
+            "evidence_image_status",
+            "evidence_image_url",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
+
+    def get_evidence_request_status(self, obj):
+        evidence_request = self._get_optional_related(obj, "evidence_request")
+        if evidence_request is None:
+            return None
+        return evidence_request.status
+
+    def get_evidence_request_reason(self, obj):
+        evidence_request = self._get_optional_related(obj, "evidence_request")
+        if evidence_request is None:
+            return None
+        return evidence_request.reason
+
+    def get_evidence_image_status(self, obj):
+        evidence_image = self._get_optional_related(obj, "evidence_image")
+        if evidence_image is None:
+            return None
+        return EvidenceImageRequest.Status.UPLOADED
+
+    def get_evidence_image_url(self, obj):
+        evidence_image = self._get_optional_related(obj, "evidence_image")
+        if evidence_image is None or not evidence_image.image:
+            return None
+        return evidence_image.image.url
+
+    def _get_optional_related(self, obj, related_name):
+        try:
+            return getattr(obj, related_name)
+        except ObjectDoesNotExist:
+            return None
 
     def validate_confidence_score(self, value):
         if value is not None and not 0 <= value <= 1:
@@ -251,3 +295,77 @@ class AIResultIngestionSerializer(serializers.Serializer):
         attrs.setdefault("requires_review", False)
         attrs.setdefault("processing_status", "")
         return attrs
+
+
+class EvidenceImageRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EvidenceImageRequest
+        fields = (
+            "id",
+            "inspection",
+            "device",
+            "source_message_id",
+            "image_id",
+            "local_image_ref",
+            "reason",
+            "status",
+            "requested_at",
+            "uploaded_at",
+            "expires_at",
+            "failure_reason",
+            "request_payload",
+            "response_metadata",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+class InspectionEvidenceImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InspectionEvidenceImage
+        fields = (
+            "id",
+            "inspection",
+            "request",
+            "device",
+            "source_message_id",
+            "image",
+            "original_filename",
+            "mime_type",
+            "size_bytes",
+            "image_sha256",
+            "width",
+            "height",
+            "uploaded_at",
+            "metadata",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+class EvidenceImageUploadSerializer(serializers.Serializer):
+    request_id = serializers.UUIDField()
+    source_message_id = serializers.CharField()
+    device_identifier = serializers.CharField()
+    image_sha256 = serializers.CharField(required=False, allow_blank=False)
+    image = serializers.FileField()
+
+    def validate_source_message_id(self, value):
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("This field may not be blank.")
+        return normalized
+
+    def validate_device_identifier(self, value):
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("This field may not be blank.")
+        return normalized
+
+    def validate_image_sha256(self, value):
+        normalized = value.strip().lower()
+        if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
+            raise serializers.ValidationError("Image SHA-256 must be a 64-character hexadecimal string.")
+        return normalized

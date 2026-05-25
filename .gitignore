@@ -98,3 +98,21 @@ ai_assets/edge_runtime/*.md
 *.png
 *.jpg
 *.jpeg  
+
+# Keep repository-level architecture docs versioned.
+docs/
+docs/PROJECT_ROADMAP.md
+docs/RASPBERRY_EDGE_PAYLOAD_CONTRACT.md
+docs/RABBITMQ_MQTT_INGESTION_TOPOLOGY.md
+docs/LIVE_DASHBOARD_REALTIME_REFRESH.md
+docs/ON_DEMAND_EVIDENCE_IMAGE_RETRIEVAL.md
+
+# Keep the Raspberry edge runtime scripts and dependency manifest versioned.
+ai_assets/edge_runtime/
+ai_assets/edge_runtime/*
+ai_assets/edge_runtime/requirements-edge.txt
+ai_assets/edge_runtime/scripts/
+ai_assets/edge_runtime/scripts/*
+ai_assets/edge_runtime/scripts/pi_extract_and_publish.py
+ai_assets/edge_runtime/scripts/pi_evidence_image_agent.py
+ai_assets/edge_runtime/scripts/evidence_image_utils.py

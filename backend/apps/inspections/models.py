@@ -1,11 +1,22 @@
+from pathlib import Path
+
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
+from django.utils.text import slugify
 
 from apps.catalog.models import Disease
 from apps.core.models import TimeStampedModel, UUIDPrimaryKeyModel
 from apps.devices.models import Device
 from apps.inference.models import InferenceIndex
+
+
+def inspection_evidence_upload_to(instance, filename):
+    device_identifier = slugify(instance.device.identifier) or str(instance.device_id)
+    source_message_id = slugify(instance.source_message_id) or str(instance.inspection_id)
+    safe_filename = Path(filename).name or "evidence-upload.bin"
+    return f"inspection_evidence/{device_identifier}/{source_message_id}/{safe_filename}"
 
 
 class Inspection(UUIDPrimaryKeyModel, TimeStampedModel):
@@ -127,3 +138,86 @@ class InspectionMatch(UUIDPrimaryKeyModel, TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.inspection_id} - rank {self.rank_order}"
+
+
+class EvidenceImageRequest(UUIDPrimaryKeyModel, TimeStampedModel):
+    class Reason(models.TextChoices):
+        DISEASE_ALERT = "disease_alert", "Disease alert"
+        REVIEW_REQUIRED = "review_required", "Review required"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        UPLOADED = "uploaded", "Uploaded"
+        FAILED = "failed", "Failed"
+        EXPIRED = "expired", "Expired"
+        NOT_FOUND = "not_found", "Not found"
+
+    inspection = models.OneToOneField(
+        Inspection,
+        on_delete=models.CASCADE,
+        related_name="evidence_request",
+    )
+    device = models.ForeignKey(
+        Device,
+        on_delete=models.PROTECT,
+        related_name="evidence_image_requests",
+    )
+    source_message_id = models.CharField(max_length=255, db_index=True)
+    image_id = models.CharField(max_length=255, blank=True)
+    local_image_ref = models.CharField(max_length=255, blank=True)
+    reason = models.CharField(max_length=32, choices=Reason.choices)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    requested_at = models.DateTimeField(default=timezone.now)
+    uploaded_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    failure_reason = models.TextField(blank=True)
+    request_payload = models.JSONField(default=dict, blank=True)
+    response_metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ("-requested_at", "-created_at")
+        indexes = [
+            models.Index(fields=("device", "status"), name="evidence_req_device_status_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source_message_id or self.inspection_id} - {self.status}"
+
+
+class InspectionEvidenceImage(UUIDPrimaryKeyModel, TimeStampedModel):
+    inspection = models.OneToOneField(
+        Inspection,
+        on_delete=models.CASCADE,
+        related_name="evidence_image",
+    )
+    request = models.OneToOneField(
+        EvidenceImageRequest,
+        on_delete=models.CASCADE,
+        related_name="evidence_image",
+    )
+    device = models.ForeignKey(
+        Device,
+        on_delete=models.PROTECT,
+        related_name="inspection_evidence_images",
+    )
+    source_message_id = models.CharField(max_length=255, db_index=True)
+    image = models.FileField(upload_to=inspection_evidence_upload_to)
+    original_filename = models.CharField(max_length=255)
+    mime_type = models.CharField(max_length=255, blank=True)
+    size_bytes = models.PositiveBigIntegerField()
+    image_sha256 = models.CharField(max_length=64)
+    width = models.PositiveIntegerField(null=True, blank=True)
+    height = models.PositiveIntegerField(null=True, blank=True)
+    uploaded_at = models.DateTimeField(default=timezone.now)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ("-uploaded_at", "-created_at")
+
+    def __str__(self) -> str:
+        return f"{self.source_message_id or self.inspection_id} - {self.original_filename}"

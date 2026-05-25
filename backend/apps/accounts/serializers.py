@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
@@ -69,7 +70,10 @@ class ChangePasswordSerializer(serializers.Serializer):
                 {"confirm_new_password": self.error_messages["new_password_mismatch"]}
             )
 
-        validate_password(attrs["new_password"], user=user)
+        try:
+            validate_password(attrs["new_password"], user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"new_password": list(exc.messages)}) from exc
         return attrs
 
     def save(self, **kwargs):

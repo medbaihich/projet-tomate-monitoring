@@ -18,6 +18,7 @@ import {
   Typography,
 } from '@mui/material';
 import StatusChip from '@/components/ui/StatusChip';
+import EvidenceImagePreview from '@/features/inspections/EvidenceImagePreview';
 import {
   formatReviewDateTime,
   resolveInspectionStatusTone,
@@ -180,6 +181,14 @@ export default function ReviewDetailPanel({
               <Divider />
             </>
           ) : null}
+
+          <EvidenceImagePreview
+            title="Evidence image"
+            imageUrl={inspection.evidence_image_url}
+            requestStatus={inspection.evidence_request_status}
+            imageStatus={inspection.evidence_image_status}
+            requestReason={inspection.evidence_request_reason}
+          />
 
           <Stack spacing={1.5}>
             <DetailRow label="inspection id" value={inspection.id} />
