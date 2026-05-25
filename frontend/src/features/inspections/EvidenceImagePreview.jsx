@@ -105,6 +105,19 @@ function resolveEvidenceImageUrl(imageUrl) {
   }
 }
 
+const OVERLAY_CHIP_SX = {
+  bgcolor: 'rgba(15, 23, 42, 0.78)',
+  color: '#F8FAFC',
+  border: '1px solid rgba(255,255,255,0.18)',
+  backdropFilter: 'blur(4px)',
+  '& .MuiChip-label': {
+    color: '#F8FAFC',
+  },
+  '& .MuiChip-icon': {
+    color: '#F8FAFC',
+  },
+};
+
 function StateFrame({ icon, title, message, chips, isLightMode, tone = 'neutral' }) {
   const palette = tone === 'warning'
     ? {
@@ -316,27 +329,18 @@ export default function EvidenceImagePreview({
                 size="small"
                 icon={<ImageRoundedIcon />}
                 label={title}
-                sx={{
-                  bgcolor: 'rgba(15, 23, 42, 0.76)',
-                  color: '#F8FAFC',
-                  '& .MuiChip-icon': { color: '#F8FAFC' },
-                }}
+                sx={OVERLAY_CHIP_SX}
               />
-              <StatusChip
+              <Chip
                 size="small"
-                tone={resolveStatusTone(imageStatus || requestStatus || 'uploaded')}
                 label={statusLabel || 'Uploaded'}
-                sx={{
-                  bgcolor: 'rgba(255,255,255,0.88)',
-                }}
+                sx={OVERLAY_CHIP_SX}
               />
               {reasonLabel ? (
                 <Chip
                   size="small"
                   label={reasonLabel}
-                  sx={{
-                    bgcolor: 'rgba(255,255,255,0.88)',
-                  }}
+                  sx={OVERLAY_CHIP_SX}
                 />
               ) : null}
             </Stack>

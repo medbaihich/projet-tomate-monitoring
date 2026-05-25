@@ -144,7 +144,7 @@ services:
     environment:
       DJANGO_SECRET_KEY: django-insecure-change-me-please-replace-this-secret
       DJANGO_DEBUG: "True"
-      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend,traefik"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend,traefik,10.165.218.219"
       AI_ASSETS_DIR: /app/ai_assets
       POSTGRES_DB: tomato_db
       POSTGRES_USER: tomato_user
@@ -164,6 +164,7 @@ services:
       EVIDENCE_IMAGE_COMMAND_ROUTING_KEY_TEMPLATE: tomato.edge.v1.{device_identifier}.commands.image-request
     volumes:
       - ./ai_assets:/app/ai_assets
+      - ./backend/media:/app/media
     depends_on:
       db:
         condition: service_healthy
@@ -182,6 +183,12 @@ services:
       - "traefik.http.routers.backend-api.entrypoints=web"
       - "traefik.http.routers.backend-api.priority=10"
       - "traefik.http.routers.backend-api.service=backend-svc"
+
+      # ---------- /media/** → backend ----------
+      - "traefik.http.routers.backend-media.rule=PathPrefix(`/media`)"
+      - "traefik.http.routers.backend-media.entrypoints=web"
+      - "traefik.http.routers.backend-media.priority=10"
+      - "traefik.http.routers.backend-media.service=backend-svc"
 
       # ---------- /admin/** → backend ----------
       - "traefik.http.routers.backend-admin.rule=PathPrefix(`/admin`)"
