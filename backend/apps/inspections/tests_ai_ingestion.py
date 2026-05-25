@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.core import mail
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -84,6 +85,9 @@ class AIResultIngestionApiTests(APITestCase):
             format="json",
             HTTP_AUTHORIZATION=f"Bearer {token}",
         )
+
+    def setUp(self):
+        mail.outbox = []
 
     def test_ingestion_creates_inspection_matches_and_notification(self):
         response = self._post(self._build_payload())
@@ -245,6 +249,124 @@ class AIResultIngestionApiTests(APITestCase):
         self.assertFalse(
             EvidenceImageRequest.objects.filter(inspection=inspection).exists()
         )
+
+    @override_settings(
+        EMAIL_NOTIFICATIONS_ENABLED=True,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        ALERT_EMAIL_RECIPIENTS=["alerts@example.com"],
+        REVIEW_EMAIL_RECIPIENTS=["review@example.com"],
+        FRONTEND_BASE_URL="https://frontend.example.com",
+    )
+    def test_review_required_email_is_sent_for_review_pending_inspection(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self._post(
+                self._build_payload(
+                    source_message_id="phase6-review-email",
+                    organ_type=Inspection.OrganType.LEAF,
+                    top1_label="healthy",
+                    final_label="healthy",
+                    confidence_score=0.42,
+                    index_used="leaf_faiss.index",
+                    metadata_used="leaf_metadata.csv",
+                    requires_review=True,
+                    matches=[
+                        {
+                            "rank_order": 1,
+                            "matched_label": "healthy",
+                            "similarity_score": 0.42,
+                            "metadata_json": {"source_row": 1},
+                        }
+                    ],
+                )
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(
+            email.subject,
+            "[SMART EYE][REVIEW] Inspection en attente de revue",
+        )
+        self.assertIn(
+            "Une inspection nécessite une revue humaine.",
+            email.body,
+        )
+        self.assertIn("https://frontend.example.com/review", email.body)
+        self.assertTrue(email.alternatives)
+        self.assertIn("Inspection en attente de revue", email.alternatives[0][0])
+
+    @override_settings(
+        EMAIL_NOTIFICATIONS_ENABLED=True,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        ALERT_EMAIL_RECIPIENTS=["alerts@example.com"],
+        REVIEW_EMAIL_RECIPIENTS=["review@example.com"],
+        FRONTEND_BASE_URL="https://frontend.example.com",
+    )
+    def test_duplicate_ai_ingestion_replay_does_not_send_duplicate_emails(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            first_response = self._post(
+                self._build_payload(source_message_id="phase6-email-duplicate")
+            )
+        second_response = self._post(
+            self._build_payload(
+                source_message_id="phase6-email-duplicate",
+                confidence_score=0.55,
+                top1_label="healthy",
+            )
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(
+            {message.subject for message in mail.outbox},
+            {
+                "[SMART EYE][HIGH] Alerte maladie tomate - Late Blight",
+                "[SMART EYE][REVIEW] Inspection en attente de revue",
+            },
+        )
+
+    @override_settings(
+        EMAIL_NOTIFICATIONS_ENABLED=True,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        REVIEW_EMAIL_RECIPIENTS=["review@example.com"],
+    )
+    def test_review_email_failure_is_logged_without_breaking_ingestion(self):
+        with patch(
+            "apps.notifications.email_services._deliver_email_message",
+            side_effect=RuntimeError("smtp offline"),
+        ):
+            with patch("apps.notifications.email_services.logger.exception") as logger_mock:
+                with self.captureOnCommitCallbacks(execute=True):
+                    response = self._post(
+                        self._build_payload(
+                            source_message_id="phase6-review-email-failure",
+                            organ_type=Inspection.OrganType.LEAF,
+                            top1_label="healthy",
+                            final_label="healthy",
+                            confidence_score=0.39,
+                            index_used="leaf_faiss.index",
+                            metadata_used="leaf_metadata.csv",
+                            requires_review=True,
+                            matches=[
+                                {
+                                    "rank_order": 1,
+                                    "matched_label": "healthy",
+                                    "similarity_score": 0.39,
+                                    "metadata_json": {"source_row": 1},
+                                }
+                            ],
+                        )
+                    )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(
+            Inspection.objects.filter(
+                source_message_id="phase6-review-email-failure"
+            ).exists()
+        )
+        logger_mock.assert_called_once()
+        self.assertEqual(len(mail.outbox), 0)
 
     @override_settings(EVIDENCE_IMAGE_COMMANDS_ENABLED=True)
     def test_publish_failure_does_not_fail_ingestion_and_request_stays_pending(self):

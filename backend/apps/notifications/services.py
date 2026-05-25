@@ -5,6 +5,7 @@ from channels.layers import get_channel_layer
 from django.db import transaction
 from django.utils.text import slugify
 
+from apps.notifications.email_services import schedule_notification_email
 from apps.notifications.models import Notification
 from apps.notifications.serializers import NotificationSerializer
 
@@ -57,6 +58,7 @@ def maybe_create_disease_alert_notification(inspection):
         transaction.on_commit(
             lambda notification_id=notification.id: _safe_broadcast_notification_by_id(notification_id)
         )
+        schedule_notification_email(notification)
 
     return notification, created
 
@@ -115,10 +117,16 @@ def _build_notification_defaults(*, inspection, disease, display_label):
 
 
 def _resolve_severity(confidence_score):
+    if confidence_score is not None and confidence_score >= 0.95:
+        return Notification.Severity.CRITICAL
+
     if confidence_score is not None and confidence_score >= 0.85:
         return Notification.Severity.HIGH
 
-    return Notification.Severity.MEDIUM
+    if confidence_score is not None and confidence_score >= 0.70:
+        return Notification.Severity.MEDIUM
+
+    return Notification.Severity.LOW
 
 
 def _broadcast_notification_by_id(notification_id):

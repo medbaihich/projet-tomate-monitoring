@@ -46,6 +46,26 @@ function formatDiseaseLabel(value) {
     .join(' ');
 }
 
+function resolveSeverityPresentation(severity, isUnread) {
+  if (severity === 'critical') {
+    return { tone: 'critical', label: isUnread ? 'Critical alert' : 'Critical' };
+  }
+
+  if (severity === 'high') {
+    return { tone: 'critical', label: isUnread ? 'High alert' : 'High' };
+  }
+
+  if (severity === 'medium') {
+    return { tone: 'alert', label: isUnread ? 'Medium alert' : 'Medium' };
+  }
+
+  if (severity === 'low') {
+    return { tone: 'attention', label: isUnread ? 'Low alert' : 'Low' };
+  }
+
+  return { tone: isUnread ? 'alert' : 'neutral', label: 'Alert' };
+}
+
 function Lane({
   tone = 'default',
   icon,
@@ -118,12 +138,7 @@ function DiseaseAlertPreview({ notification, onOpen }) {
   const inspectionReference = notification.payload?.source_message_id || notification.inspection;
   const isUnread = !notification.is_read;
   const diseaseLabel = formatDiseaseLabel(notification.display_disease_label || notification.title);
-  const severityTone = isUnread
-    ? notification.severity === 'high' ? 'critical' : 'alert'
-    : 'neutral';
-  const severityLabel = notification.severity === 'high'
-    ? (isUnread ? 'High alert' : 'High')
-    : 'Alert';
+  const severityPresentation = resolveSeverityPresentation(notification.severity, isUnread);
 
   return (
     <Card
@@ -163,8 +178,8 @@ function DiseaseAlertPreview({ notification, onOpen }) {
               <Stack spacing={0.45} alignItems="flex-end">
                 <StatusChip
                   size="small"
-                  tone={severityTone}
-                  label={severityLabel}
+                  tone={severityPresentation.tone}
+                  label={severityPresentation.label}
                 />
                 <StatusChip
                   size="small"

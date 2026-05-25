@@ -3,8 +3,9 @@ from datetime import timedelta
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
+from django.core import mail
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -118,9 +119,11 @@ class NotificationFixtureMixin:
         *,
         predicted_disease,
         top1_label,
+        confidence_score=0.91,
         processing_status=Inspection.ProcessingStatus.COMPLETED,
         organ_type=Inspection.OrganType.LEAF,
         inference_index=None,
+        extra_metadata=None,
     ):
         now = timezone.now().replace(microsecond=0)
         active_inference_index = inference_index or self.leaf_index
@@ -133,11 +136,11 @@ class NotificationFixtureMixin:
             processing_status=processing_status,
             source_message_id=f"service-notification-test-{now.timestamp()}-{uuid4().hex}",
             top1_label=top1_label,
-            confidence_score=0.91,
+            confidence_score=confidence_score,
             captured_at=now,
             received_at=now,
             processed_at=now + timedelta(minutes=1),
-            extra_metadata={"source": "service-tests"},
+            extra_metadata=extra_metadata or {"source": "service-tests"},
         )
 
 
@@ -349,6 +352,112 @@ class NotificationServiceTests(NotificationFixtureMixin, TestCase):
         self.assertEqual(event["reason"], "inspection.created")
         assert_json_safe_primitive(self, event)
         json.dumps(event)
+
+
+@override_settings(
+    EMAIL_NOTIFICATIONS_ENABLED=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    ALERT_EMAIL_RECIPIENTS=["alerts@example.com"],
+    REVIEW_EMAIL_RECIPIENTS=["review@example.com"],
+    FRONTEND_BASE_URL="https://frontend.example.com",
+)
+class NotificationEmailServiceTests(NotificationFixtureMixin, TestCase):
+    def setUp(self):
+        mail.outbox = []
+
+    def test_disease_alert_email_uses_expected_severity_message_and_color(self):
+        cases = [
+            (
+                0.97,
+                Notification.Severity.CRITICAL,
+                "Intervention immédiate requise. Une alerte critique a été détectée.",
+                "#7e22ce",
+            ),
+            (
+                0.90,
+                Notification.Severity.HIGH,
+                "Alerte élevée détectée. Une vérification rapide est recommandée",
+                "#dc2626",
+            ),
+            (
+                0.74,
+                Notification.Severity.MEDIUM,
+                "Alerte moyenne détectée. Merci de consulter l’inspection",
+                "#ea580c",
+            ),
+            (
+                0.51,
+                Notification.Severity.LOW,
+                "Alerte faible détectée. Une surveillance est recommandée.",
+                "#ca8a04",
+            ),
+        ]
+
+        for confidence_score, expected_severity, expected_message, expected_color in cases:
+            with self.subTest(confidence_score=confidence_score, severity=expected_severity):
+                mail.outbox = []
+                inspection = self.create_inspection_model(
+                    predicted_disease=self.early_blight,
+                    top1_label=self.early_blight.name,
+                    confidence_score=confidence_score,
+                )
+
+                with patch("apps.notifications.services._broadcast_notification_by_id"):
+                    with self.captureOnCommitCallbacks(execute=True):
+                        notification, created = maybe_create_disease_alert_notification(inspection)
+
+                self.assertTrue(created)
+                self.assertEqual(notification.severity, expected_severity)
+                self.assertEqual(len(mail.outbox), 1)
+
+                email = mail.outbox[0]
+                self.assertEqual(
+                    email.subject,
+                    f"[SMART EYE][{expected_severity.upper()}] Alerte maladie tomate - {self.early_blight.name}",
+                )
+                self.assertIn(expected_message, email.body)
+                self.assertIn("https://frontend.example.com/inspections", email.body)
+                self.assertTrue(email.alternatives)
+                self.assertIn(expected_color, email.alternatives[0][0])
+                self.assertIn(expected_message, email.alternatives[0][0])
+
+    def test_duplicate_alert_email_is_not_sent_twice_for_same_inspection(self):
+        inspection = self.create_inspection_model(
+            predicted_disease=self.early_blight,
+            top1_label=self.early_blight.name,
+        )
+
+        with patch("apps.notifications.services._broadcast_notification_by_id"):
+            with self.captureOnCommitCallbacks(execute=True):
+                first_notification, first_created = maybe_create_disease_alert_notification(inspection)
+            with self.captureOnCommitCallbacks(execute=True):
+                second_notification, second_created = maybe_create_disease_alert_notification(inspection)
+
+        self.assertTrue(first_created)
+        self.assertFalse(second_created)
+        self.assertEqual(first_notification.id, second_notification.id)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_alert_email_failure_is_logged_without_breaking_notification_creation(self):
+        inspection = self.create_inspection_model(
+            predicted_disease=self.early_blight,
+            top1_label=self.early_blight.name,
+        )
+
+        with patch("apps.notifications.services._broadcast_notification_by_id"):
+            with patch(
+                "apps.notifications.email_services._deliver_email_message",
+                side_effect=RuntimeError("smtp unavailable"),
+            ):
+                with patch("apps.notifications.email_services.logger.exception") as logger_mock:
+                    with self.captureOnCommitCallbacks(execute=True):
+                        notification, created = maybe_create_disease_alert_notification(inspection)
+
+        self.assertTrue(created)
+        self.assertIsNotNone(notification)
+        self.assertEqual(Notification.objects.count(), 1)
+        logger_mock.assert_called_once()
+        self.assertEqual(len(mail.outbox), 0)
 
 
 class NotificationApiTests(NotificationFixtureMixin, APITestCase):
