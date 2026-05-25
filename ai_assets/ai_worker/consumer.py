@@ -165,6 +165,8 @@ def build_worker_result(
     }
     if payload.image_id:
         extra_metadata["image_id"] = payload.image_id
+    if payload.capture_artifact is not None:
+        extra_metadata["capture_artifact"] = payload.capture_artifact
     if payload.edge_metadata is not None:
         extra_metadata["edge_metadata"] = payload.edge_metadata
 

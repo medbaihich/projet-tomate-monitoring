@@ -1,0 +1,13 @@
+numpy
+Pillow
+ai-edge-litert
+paho-mqtt
+requests
+
+# LiteRT is the default lightweight interpreter for Raspberry Pi because
+# Python 3.13 does not support the older tflite-runtime wheel in this setup.
+# paho-mqtt is required starting from Phase E to publish JSON feature vectors
+# from Raspberry Pi to the PC RabbitMQ MQTT broker.
+# FAISS and organ/disease decisions stay on the PC, not on Raspberry Pi.
+# The full TensorFlow package is intentionally not installed on Raspberry Pi
+# to keep RAM usage low on the 2GB device.
