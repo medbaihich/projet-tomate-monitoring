@@ -2,6 +2,7 @@ import logging
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.utils.text import slugify
 
@@ -88,7 +89,7 @@ def _is_healthy_subject(disease, display_label):
 
 
 def _build_notification_defaults(*, inspection, disease, display_label):
-    severity = _resolve_severity(inspection.confidence_score)
+    severity = resolve_disease_alert_severity(inspection)
     title = f"Disease alert detected: {display_label}"
     message = (
         f"Inspection {inspection.source_message_id or inspection.id} detected {display_label} "
@@ -116,7 +117,31 @@ def _build_notification_defaults(*, inspection, disease, display_label):
     }
 
 
-def _resolve_severity(confidence_score):
+def resolve_disease_alert_severity(inspection):
+    disease = getattr(inspection, "predicted_disease", None)
+    risk_level = _resolve_catalog_risk_level(disease)
+    if risk_level:
+        return risk_level
+
+    return _resolve_confidence_fallback_severity(inspection.confidence_score)
+
+
+def _resolve_catalog_risk_level(disease):
+    if disease is None:
+        return ""
+
+    try:
+        risk_level = (disease.map_profile.risk_level or "").strip().lower()
+    except ObjectDoesNotExist:
+        return ""
+
+    if risk_level in Notification.Severity.values:
+        return risk_level
+
+    return ""
+
+
+def _resolve_confidence_fallback_severity(confidence_score):
     if confidence_score is not None and confidence_score >= 0.95:
         return Notification.Severity.CRITICAL
 
@@ -126,7 +151,10 @@ def _resolve_severity(confidence_score):
     if confidence_score is not None and confidence_score >= 0.70:
         return Notification.Severity.MEDIUM
 
-    return Notification.Severity.LOW
+    if confidence_score is not None:
+        return Notification.Severity.LOW
+
+    return Notification.Severity.MEDIUM
 
 
 def _broadcast_notification_by_id(notification_id):

@@ -77,6 +77,18 @@ class NotificationFixtureMixin:
             organ_type=Disease.OrganType.LEAF,
             ai_label="early_blight",
         )
+        cls.leaf_late_blight = Disease.objects.get(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label="late_blight",
+        )
+        cls.fruit_blossom_end_rot = Disease.objects.get(
+            organ_type=Disease.OrganType.FRUIT,
+            ai_label="blossom_end_rot",
+        )
+        cls.fruit_catfaced = Disease.objects.get(
+            organ_type=Disease.OrganType.FRUIT,
+            ai_label="catfaced",
+        )
 
     def create_inspection_payload(
         self,
@@ -365,41 +377,131 @@ class NotificationEmailServiceTests(NotificationFixtureMixin, TestCase):
     def setUp(self):
         mail.outbox = []
 
+    def test_disease_alert_email_uses_catalog_critical_risk_even_when_confidence_is_low(self):
+        inspection = self.create_inspection_model(
+            predicted_disease=self.leaf_late_blight,
+            top1_label=self.leaf_late_blight.name,
+            confidence_score=0.55,
+        )
+
+        with patch("apps.notifications.services._broadcast_notification_by_id"):
+            with self.captureOnCommitCallbacks(execute=True):
+                notification, created = maybe_create_disease_alert_notification(inspection)
+
+        self.assertTrue(created)
+        self.assertEqual(notification.severity, Notification.Severity.CRITICAL)
+        self.assertEqual(len(mail.outbox), 1)
+
+        email = mail.outbox[0]
+        self.assertEqual(
+            email.subject,
+            f"[SMART EYE][CRITICAL] Alerte maladie tomate - {self.leaf_late_blight.name}",
+        )
+        self.assertIn(
+            "Intervention immédiate requise. Une alerte critique a été détectée.",
+            email.body,
+        )
+        self.assertIn("Confiance : 55%", email.body)
+        self.assertTrue(email.alternatives)
+        self.assertIn("#7e22ce", email.alternatives[0][0])
+
+    def test_disease_alert_email_uses_catalog_low_risk_even_when_confidence_is_high(self):
+        inspection = self.create_inspection_model(
+            predicted_disease=self.fruit_catfaced,
+            top1_label=self.fruit_catfaced.name,
+            confidence_score=0.97,
+            organ_type=Inspection.OrganType.FRUIT,
+            inference_index=self.fruit_index,
+        )
+
+        with patch("apps.notifications.services._broadcast_notification_by_id"):
+            with self.captureOnCommitCallbacks(execute=True):
+                notification, created = maybe_create_disease_alert_notification(inspection)
+
+        self.assertTrue(created)
+        self.assertEqual(notification.severity, Notification.Severity.LOW)
+        self.assertEqual(len(mail.outbox), 1)
+
+        email = mail.outbox[0]
+        self.assertEqual(
+            email.subject,
+            f"[SMART EYE][LOW] Alerte maladie tomate - {self.fruit_catfaced.name}",
+        )
+        self.assertIn(
+            "Alerte faible détectée. Une surveillance est recommandée.",
+            email.body,
+        )
+        self.assertIn("Confiance : 97%", email.body)
+        self.assertTrue(email.alternatives)
+        self.assertIn("#ca8a04", email.alternatives[0][0])
+
+    def test_disease_alert_email_falls_back_to_confidence_when_no_catalog_profile_exists(self):
+        suffix = uuid4().hex[:8]
+        fallback_disease = Disease.objects.create(
+            organ_type=Disease.OrganType.LEAF,
+            ai_label=f"fallback_notification_{suffix}",
+            name="Fallback Notification Disease",
+            slug=f"fallback-notification-disease-{suffix}",
+        )
+        inspection = self.create_inspection_model(
+            predicted_disease=fallback_disease,
+            top1_label=fallback_disease.name,
+            confidence_score=0.91,
+        )
+
+        with patch("apps.notifications.services._broadcast_notification_by_id"):
+            with self.captureOnCommitCallbacks(execute=True):
+                notification, created = maybe_create_disease_alert_notification(inspection)
+
+        self.assertTrue(created)
+        self.assertEqual(notification.severity, Notification.Severity.HIGH)
+        self.assertEqual(len(mail.outbox), 1)
+
     def test_disease_alert_email_uses_expected_severity_message_and_color(self):
         cases = [
             (
-                0.97,
+                self.leaf_late_blight,
                 Notification.Severity.CRITICAL,
                 "Intervention immédiate requise. Une alerte critique a été détectée.",
                 "#7e22ce",
             ),
             (
-                0.90,
+                self.early_blight,
                 Notification.Severity.HIGH,
                 "Alerte élevée détectée. Une vérification rapide est recommandée",
                 "#dc2626",
             ),
             (
-                0.74,
+                self.fruit_blossom_end_rot,
                 Notification.Severity.MEDIUM,
                 "Alerte moyenne détectée. Merci de consulter l’inspection",
                 "#ea580c",
             ),
             (
-                0.51,
+                self.fruit_catfaced,
                 Notification.Severity.LOW,
                 "Alerte faible détectée. Une surveillance est recommandée.",
                 "#ca8a04",
             ),
         ]
 
-        for confidence_score, expected_severity, expected_message, expected_color in cases:
-            with self.subTest(confidence_score=confidence_score, severity=expected_severity):
+        for disease, expected_severity, expected_message, expected_color in cases:
+            with self.subTest(disease=disease.ai_label, severity=expected_severity):
                 mail.outbox = []
+                organ_type = (
+                    Inspection.OrganType.FRUIT
+                    if disease.organ_type == Disease.OrganType.FRUIT
+                    else Inspection.OrganType.LEAF
+                )
+                inference_index = (
+                    self.fruit_index if organ_type == Inspection.OrganType.FRUIT else self.leaf_index
+                )
                 inspection = self.create_inspection_model(
-                    predicted_disease=self.early_blight,
-                    top1_label=self.early_blight.name,
-                    confidence_score=confidence_score,
+                    predicted_disease=disease,
+                    top1_label=disease.name,
+                    confidence_score=0.81,
+                    organ_type=organ_type,
+                    inference_index=inference_index,
                 )
 
                 with patch("apps.notifications.services._broadcast_notification_by_id"):
@@ -413,7 +515,7 @@ class NotificationEmailServiceTests(NotificationFixtureMixin, TestCase):
                 email = mail.outbox[0]
                 self.assertEqual(
                     email.subject,
-                    f"[SMART EYE][{expected_severity.upper()}] Alerte maladie tomate - {self.early_blight.name}",
+                    f"[SMART EYE][{expected_severity.upper()}] Alerte maladie tomate - {disease.name}",
                 )
                 self.assertIn(expected_message, email.body)
                 self.assertIn("https://frontend.example.com/inspections", email.body)

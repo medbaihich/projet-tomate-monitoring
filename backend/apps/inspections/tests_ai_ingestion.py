@@ -321,7 +321,7 @@ class AIResultIngestionApiTests(APITestCase):
         self.assertEqual(
             {message.subject for message in mail.outbox},
             {
-                "[SMART EYE][HIGH] Alerte maladie tomate - Late Blight",
+                "[SMART EYE][CRITICAL] Alerte maladie tomate - Late Blight",
                 "[SMART EYE][REVIEW] Inspection en attente de revue",
             },
         )
