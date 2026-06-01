@@ -12,8 +12,10 @@ class Notification(UUIDPrimaryKeyModel, TimeStampedModel):
         DISEASE_ALERT = "disease_alert", "Disease Alert"
 
     class Severity(models.TextChoices):
+        LOW = "low", "Low"
         MEDIUM = "medium", "Medium"
         HIGH = "high", "High"
+        CRITICAL = "critical", "Critical"
 
     inspection = models.ForeignKey(
         Inspection,

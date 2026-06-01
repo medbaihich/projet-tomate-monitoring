@@ -21,6 +21,7 @@ from apps.inspections.models import (
     InspectionEvidenceImage,
     InspectionMatch,
 )
+from apps.notifications.email_services import schedule_review_required_email
 from apps.notifications.services import (
     is_inspection_alert_eligible,
     maybe_create_disease_alert_notification,
@@ -120,6 +121,7 @@ def create_inspection_with_matches(*, inspection_data, matches_data=None):
     )
 
     maybe_create_disease_alert_notification(inspection)
+    schedule_review_required_email(inspection)
 
     return inspection
 

@@ -100,12 +100,10 @@ ai_assets/edge_runtime/*.md
 *.jpeg  
 
 # Keep repository-level architecture docs versioned.
-docs/
-docs/PROJECT_ROADMAP.md
-docs/RASPBERRY_EDGE_PAYLOAD_CONTRACT.md
-docs/RABBITMQ_MQTT_INGESTION_TOPOLOGY.md
-docs/LIVE_DASHBOARD_REALTIME_REFRESH.md
-docs/ON_DEMAND_EVIDENCE_IMAGE_RETRIEVAL.md
+!docs/
+docs/*
+!docs/PROJECT_ROADMAP.md
+!docs/EMAIL_ALERT_NOTIFICATIONS.md
 
 # Keep the Raspberry edge runtime scripts and dependency manifest versioned.
 ai_assets/edge_runtime/

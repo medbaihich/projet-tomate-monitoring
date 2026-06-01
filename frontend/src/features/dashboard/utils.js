@@ -124,12 +124,8 @@ export function resolveNotificationRiskLevel(notification, diseases = []) {
     return mappedRiskLevel
   }
 
-  if (notification?.severity === 'high') {
-    return 'high'
-  }
-
-  if (notification?.severity === 'medium') {
-    return 'medium'
+  if (notification?.severity && DASHBOARD_RISK_PRIORITY[notification.severity]) {
+    return notification.severity
   }
 
   return null

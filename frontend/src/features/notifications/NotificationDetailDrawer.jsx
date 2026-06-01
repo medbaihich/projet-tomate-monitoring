@@ -45,6 +45,26 @@ function hasText(value) {
   return typeof value === 'string' ? Boolean(value.trim()) : Boolean(value);
 }
 
+function resolveSeverityPresentation(severity) {
+  if (severity === 'critical') {
+    return { tone: 'critical', label: 'Critical alert' };
+  }
+
+  if (severity === 'high') {
+    return { tone: 'critical', label: 'High alert' };
+  }
+
+  if (severity === 'medium') {
+    return { tone: 'alert', label: 'Medium alert' };
+  }
+
+  if (severity === 'low') {
+    return { tone: 'attention', label: 'Low alert' };
+  }
+
+  return { tone: 'alert', label: 'Alert' };
+}
+
 function SectionCard({ icon, title, subtitle, children }) {
   return (
     <Card
@@ -154,6 +174,7 @@ export default function NotificationDetailDrawer({
     || notification?.payload?.source_message_id
     || notification?.inspection
     || 'N/A';
+  const severityPresentation = resolveSeverityPresentation(notification?.severity);
 
   const summaryRows = [
     { label: 'alert message', value: notification?.message },
@@ -316,8 +337,8 @@ export default function NotificationDetailDrawer({
 
                   <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
                     <StatusChip
-                      tone={notification.severity === 'high' ? 'critical' : 'alert'}
-                      label={notification.severity === 'high' ? 'High alert' : 'Alert'}
+                      tone={severityPresentation.tone}
+                      label={severityPresentation.label}
                     />
                     <Chip
                       size="small"
