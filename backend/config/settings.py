@@ -7,11 +7,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_env_file(BASE_DIR / ".env")
 AI_ASSETS_DIR = Path(env("AI_ASSETS_DIR", str(BASE_DIR.parent / "ai_assets"))).resolve()
 
-SECRET_KEY = env(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-change-me-please-replace-this-secret",
-)
-DEBUG = env_bool("DJANGO_DEBUG", True)
+SECRET_KEY = env("DJANGO_SECRET_KEY")
+DEBUG = env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver")
 
 INSTALLED_APPS = [
@@ -71,7 +68,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": env("POSTGRES_DB", "tomato_db"),
         "USER": env("POSTGRES_USER", "tomato_user"),
-        "PASSWORD": env("POSTGRES_PASSWORD", "tomato_pass"),
+        "PASSWORD": env("POSTGRES_PASSWORD", ""),
         "HOST": env("POSTGRES_HOST", "localhost"),
         "PORT": env("POSTGRES_PORT", "5432"),
     }
@@ -140,11 +137,11 @@ CHANNEL_LAYERS = {
 
 AI_WORKER_INGESTION_TOKEN = env(
     "AI_WORKER_INGESTION_TOKEN",
-    "tomato-ai-worker-dev-token",
+    "",
 )
 EVIDENCE_IMAGE_UPLOAD_TOKEN = env(
     "EVIDENCE_IMAGE_UPLOAD_TOKEN",
-    "tomato-evidence-upload-dev-token",
+    "",
 )
 EVIDENCE_IMAGE_UPLOAD_MAX_BYTES = env_int(
     "EVIDENCE_IMAGE_UPLOAD_MAX_BYTES",
@@ -168,7 +165,7 @@ EVIDENCE_IMAGE_COMMAND_RABBITMQ_USERNAME = env(
 )
 EVIDENCE_IMAGE_COMMAND_RABBITMQ_PASSWORD = env(
     "EVIDENCE_IMAGE_COMMAND_RABBITMQ_PASSWORD",
-    "guest",
+    "",
 )
 EVIDENCE_IMAGE_COMMAND_RABBITMQ_VHOST = env(
     "EVIDENCE_IMAGE_COMMAND_RABBITMQ_VHOST",
@@ -201,3 +198,18 @@ FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", "http://localhost:5173")
 ALERT_EMAIL_RECIPIENTS = env_list("ALERT_EMAIL_RECIPIENTS", "")
 REVIEW_EMAIL_RECIPIENTS = env_list("REVIEW_EMAIL_RECIPIENTS", "")
 EMAIL_NOTIFICATIONS_ENABLED = env_bool("EMAIL_NOTIFICATIONS_ENABLED", False)
+
+if not DEBUG:
+    missing_security_variables = [
+        name
+        for name, value in (
+            ("AI_WORKER_INGESTION_TOKEN", AI_WORKER_INGESTION_TOKEN),
+            ("EVIDENCE_IMAGE_UPLOAD_TOKEN", EVIDENCE_IMAGE_UPLOAD_TOKEN),
+        )
+        if not value
+    ]
+    if missing_security_variables:
+        missing_names = ", ".join(missing_security_variables)
+        raise RuntimeError(
+            f"Missing required security environment variable(s): {missing_names}"
+        )

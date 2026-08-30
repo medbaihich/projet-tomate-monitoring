@@ -1,9 +1,11 @@
+export const REVIEW_REQUIRED_CONFIDENCE_THRESHOLD = 0.7;
+
 export function isInspectionReviewable(inspection, reviewedInspectionIds) {
   return (
     !reviewedInspectionIds.has(inspection.id)
     && inspection.confidence_score !== null
     && inspection.confidence_score !== undefined
-    && inspection.confidence_score <= 0.5
+    && inspection.confidence_score < REVIEW_REQUIRED_CONFIDENCE_THRESHOLD
   );
 }
 

@@ -14,7 +14,6 @@ import {
   Typography,
 } from '@mui/material';
 import axiosClient from '@/api/axiosClient';
-import azuraLogo from '@/assets/branding/azura_logo.png';
 import useAuthStore from '@/store/authStore';
 import { useThemeMode } from '@/theme-mode-context';
 
@@ -115,27 +114,6 @@ export default function Login() {
           >
             <Stack spacing={3.5} justifyContent="space-between" sx={{ position: 'relative', zIndex: 1 }}>
               <Box>
-                <Box
-                  sx={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'flex-start',
-                    mb: 3.25,
-                  }}
-                >
-                  <Box
-                    component="img"
-                    src={azuraLogo}
-                    alt="Azura"
-                    sx={{
-                      display: 'block',
-                      width: { xs: 126, sm: 148 },
-                      maxWidth: '100%',
-                      height: 'auto',
-                      objectFit: 'contain',
-                    }}
-                  />
-                </Box>
                 <Typography
                   component="h1"
                   sx={{

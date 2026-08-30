@@ -13,6 +13,7 @@ from apps.notifications.serializers import NotificationSerializer
 
 NOTIFICATIONS_GROUP_NAME = "notifications.global"
 HEALTHY_LABEL = "healthy"
+REVIEW_REQUIRED_CONFIDENCE_THRESHOLD = 0.70
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +61,42 @@ def maybe_create_disease_alert_notification(inspection):
             lambda notification_id=notification.id: _safe_broadcast_notification_by_id(notification_id)
         )
         schedule_notification_email(notification)
+
+    return notification, created
+
+
+def is_inspection_review_required_eligible(inspection):
+    if inspection.processing_status != inspection.ProcessingStatus.COMPLETED:
+        return False
+
+    if inspection.status in {
+        inspection.Status.REVIEWED,
+        inspection.Status.CLOSED,
+    }:
+        return False
+
+    confidence_score = inspection.confidence_score
+    if confidence_score is None:
+        return False
+
+    return confidence_score < REVIEW_REQUIRED_CONFIDENCE_THRESHOLD
+
+
+def maybe_create_review_required_notification(inspection):
+    if not is_inspection_review_required_eligible(inspection):
+        return None, False
+
+    notification, created = Notification.objects.get_or_create(
+        inspection=inspection,
+        event_type=Notification.EventType.REVIEW_REQUIRED,
+        defaults=_build_review_required_notification_defaults(inspection),
+    )
+
+    if created:
+        transaction.on_commit(
+            lambda notification_id=notification.id: _safe_broadcast_notification_by_id(notification_id)
+        )
+        schedule_dashboard_refresh_event("review.required")
 
     return notification, created
 
@@ -113,6 +150,43 @@ def _build_notification_defaults(*, inspection, disease, display_label):
             "source_message_id": inspection.source_message_id,
             "captured_at": inspection.captured_at.isoformat() if inspection.captured_at else None,
             "received_at": inspection.received_at.isoformat() if inspection.received_at else None,
+        },
+    }
+
+
+def _build_review_required_notification_defaults(inspection):
+    disease = inspection.predicted_disease
+    display_label = (
+        (inspection.top1_label or "").strip()
+        or getattr(disease, "name", "")
+        or "Manual review"
+    )
+    confidence_percentage = round(float(inspection.confidence_score) * 100)
+    threshold_percentage = round(REVIEW_REQUIRED_CONFIDENCE_THRESHOLD * 100)
+    message = (
+        f"Inspection {inspection.source_message_id or inspection.id} needs manual review "
+        f"because confidence is {confidence_percentage}%, below the {threshold_percentage}% threshold."
+    )
+
+    return {
+        "disease": disease,
+        "severity": Notification.Severity.MEDIUM,
+        "title": f"Review required: {display_label}",
+        "message": message,
+        "display_disease_label": display_label,
+        "confidence_score": inspection.confidence_score,
+        "payload": {
+            "device_id": str(inspection.device_id),
+            "device_name": inspection.device.name,
+            "device_identifier": inspection.device.identifier,
+            "inspection_status": inspection.status,
+            "processing_status": inspection.processing_status,
+            "organ_type": inspection.organ_type,
+            "source_message_id": inspection.source_message_id,
+            "captured_at": inspection.captured_at.isoformat() if inspection.captured_at else None,
+            "received_at": inspection.received_at.isoformat() if inspection.received_at else None,
+            "review_reason": "confidence_below_threshold",
+            "review_threshold": REVIEW_REQUIRED_CONFIDENCE_THRESHOLD,
         },
     }
 

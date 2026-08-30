@@ -25,6 +25,7 @@ from apps.notifications.email_services import schedule_review_required_email
 from apps.notifications.services import (
     is_inspection_alert_eligible,
     maybe_create_disease_alert_notification,
+    maybe_create_review_required_notification,
     schedule_dashboard_refresh_event,
 )
 
@@ -121,6 +122,7 @@ def create_inspection_with_matches(*, inspection_data, matches_data=None):
     )
 
     maybe_create_disease_alert_notification(inspection)
+    maybe_create_review_required_notification(inspection)
     schedule_review_required_email(inspection)
 
     return inspection
@@ -519,6 +521,7 @@ def store_evidence_image_upload(
                 image_sha256=computed_sha256,
             ),
         )
+        schedule_dashboard_refresh_event("evidence_image.uploaded")
 
     evidence_request.refresh_from_db()
     evidence_image.refresh_from_db()

@@ -30,7 +30,6 @@ import {
   PrecisionManufacturing as PrecisionManufacturingIcon,
   RuleFolder as RuleFolderIcon,
 } from '@mui/icons-material';
-import azuraLogo from '@/assets/branding/azura_logo.png';
 import useAuthStore from '@/store/authStore';
 import { useThemeMode } from '@/theme-mode-context';
 
@@ -240,19 +239,7 @@ export default function MainLayout(props) {
             <MenuIcon />
           </IconButton>
 
-          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexGrow: 1 }}>
-            <Box
-              component="img"
-              src={azuraLogo}
-              alt="Azura"
-              sx={{
-                height: { xs: 24, sm: 28 },
-                width: 'auto',
-                objectFit: 'contain',
-                flexShrink: 0,
-              }}
-            />
-          </Stack>
+          <Box sx={{ flexGrow: 1 }} />
 
           <Stack
             direction="row"

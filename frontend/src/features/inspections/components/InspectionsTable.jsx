@@ -194,6 +194,12 @@ export default function InspectionsTable({
   const footerClassName = isLightMode
     ? 'rounded-xl border border-slate-200 bg-white/72 px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
     : '';
+  const stickyActionCellClassName = isLightMode
+    ? 'sticky right-0 z-10 border-l border-slate-200/90 bg-white/96'
+    : 'sticky right-0 z-10 border-l border-border/80 bg-card';
+  const stickyActionHeaderClassName = isLightMode
+    ? 'sticky right-0 z-20 border-l border-slate-200/90 bg-slate-50/95'
+    : 'sticky right-0 z-20 border-l border-border/80 bg-card';
   const columns = useMemo(
     () => [
       {
@@ -202,12 +208,9 @@ export default function InspectionsTable({
         header: 'Disease',
         enableSorting: false,
         cell: ({ row }) => (
-          <div className="min-w-[12rem]">
-            <div className="truncate font-semibold text-foreground">
+          <div className="max-w-[11rem]">
+            <div className="truncate text-sm font-semibold text-foreground">
               {row.original.top1_label || resolveInspectionDiseaseLabel(row.original.predicted_disease, diseaseMap)}
-            </div>
-            <div className="truncate text-xs text-muted-foreground">
-              {row.original.source_message_id || row.original.id}
             </div>
           </div>
         ),
@@ -217,7 +220,7 @@ export default function InspectionsTable({
         header: 'Organ',
         enableSorting: false,
         cell: ({ row }) => (
-          <Badge variant="outline" className="bg-background font-medium">
+          <Badge variant="outline" className="bg-background px-2 py-0.5 font-medium">
             {formatLabel(row.original.organ_type)}
           </Badge>
         ),
@@ -227,7 +230,7 @@ export default function InspectionsTable({
         header: 'Device',
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="max-w-[15rem] truncate text-sm text-foreground">
+          <span className="block max-w-[10rem] truncate text-sm text-foreground xl:max-w-[12rem]">
             {resolveInspectionDeviceLabel(row.original.device, deviceMap)}
           </span>
         ),
@@ -284,7 +287,7 @@ export default function InspectionsTable({
         enableSorting: false,
         header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => (
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex min-w-[4.75rem] items-center justify-end gap-1">
             <ActionIconButton
               title="View inspection"
               ariaLabel={`View inspection ${row.original.top1_label || row.original.source_message_id || row.original.id}`}
@@ -346,7 +349,7 @@ export default function InspectionsTable({
         <InspectionsTableSkeleton />
       ) : (
         <div className={tableShellClassName}>
-          <Table>
+          <Table className="min-w-full">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="hover:bg-transparent">
@@ -354,8 +357,17 @@ export default function InspectionsTable({
                     <TableHead
                       key={header.id}
                       className={cn(
-                        'h-10 whitespace-nowrap px-3',
+                        'h-10 whitespace-nowrap px-2.5',
                         header.column.id === 'actions' && 'text-right',
+                        header.column.id === 'prediction' && 'w-[12%] min-w-[9rem]',
+                        header.column.id === 'organ_type' && 'w-[8%] min-w-[6rem]',
+                        header.column.id === 'device' && 'w-[16%] min-w-[8.5rem]',
+                        header.column.id === 'confidence_score' && 'w-[9%] min-w-[6.5rem]',
+                        header.column.id === 'status' && 'w-[10%] min-w-[7rem]',
+                        header.column.id === 'processing_status' && 'w-[11%] min-w-[8rem]',
+                        header.column.id === 'captured_at' && 'w-[12%] min-w-[8.5rem]',
+                        header.column.id === 'processed_or_updated' && 'w-[12%] min-w-[8.5rem]',
+                        header.column.id === 'actions' && cn('w-[6.5rem] min-w-[6.5rem]', stickyActionHeaderClassName),
                         isLightMode && 'bg-slate-50/80 text-slate-600',
                       )}
                     >
@@ -382,7 +394,13 @@ export default function InspectionsTable({
                     onClick={() => onSelectInspection(row.original)}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="px-3 py-2.5">
+                      <TableCell
+                        key={cell.id}
+                        className={cn(
+                          'px-2.5 py-2.5',
+                          cell.column.id === 'actions' && stickyActionCellClassName,
+                        )}
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}

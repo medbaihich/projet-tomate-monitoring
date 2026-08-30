@@ -11,7 +11,7 @@ services:
 
   # -----------------------------------------------------------
   # TRAEFIK — Reverse Proxy
-  # Dashboard: http://localhost:8080
+  # Dashboard is disabled by default; access the proxy only through port 80.
   # -----------------------------------------------------------
   traefik:
     image: traefik:v3.0
@@ -22,11 +22,9 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=web"
       - "--entrypoints.web.address=:80"
-      - "--api.dashboard=true"
-      - "--api.insecure=true"
+      - "--api.dashboard=false"
     ports:
       - "80:80"
-      - "18080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     networks:
@@ -41,15 +39,15 @@ services:
     container_name: tomato_db
     restart: always
     environment:
-      POSTGRES_DB: tomato_db
-      POSTGRES_USER: tomato_user
-      POSTGRES_PASSWORD: tomato_pass
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tomato_user -d tomato_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -68,16 +66,17 @@ services:
     container_name: tomato_rabbitmq
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: tomato_mqtt
-      RABBITMQ_DEFAULT_PASS: tomato_mqtt_pass
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?Set RABBITMQ_DEFAULT_USER in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
       RABBITMQ_DEFAULT_VHOST: /
     command: >
       sh -c "rabbitmq-plugins enable --offline rabbitmq_mqtt &&
              rabbitmq-server"
     ports:
-      - "5672:5672"
-      - "1883:1883"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      # MQTT remains reachable from the Raspberry Pi as required by the edge workflow.
+      - "${MQTT_BIND_ADDRESS:-0.0.0.0}:1883:1883"
+      - "127.0.0.1:15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -106,8 +105,8 @@ services:
     environment:
       AI_WORKER_RABBITMQ_HOST: rabbitmq
       AI_WORKER_RABBITMQ_PORT: "5672"
-      AI_WORKER_RABBITMQ_USERNAME: tomato_mqtt
-      AI_WORKER_RABBITMQ_PASSWORD: tomato_mqtt_pass
+      AI_WORKER_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:?Set RABBITMQ_DEFAULT_USER in .env}
+      AI_WORKER_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
       AI_WORKER_RABBITMQ_VHOST: /
       AI_WORKER_REQUEST_EXCHANGE: amq.topic
       AI_WORKER_REQUEST_QUEUE: tomato.ai.inference.requests.v1
@@ -119,7 +118,7 @@ services:
       AI_WORKER_LOG_LEVEL: INFO
       AI_WORKER_RESULT_SINK: backend_http
       AI_WORKER_BACKEND_INGESTION_URL: http://backend:8000/api/v1/inspections/ingest-ai-result/
-      AI_WORKER_BACKEND_INGESTION_TOKEN: tomato-ai-worker-dev-token
+      AI_WORKER_BACKEND_INGESTION_TOKEN: ${AI_WORKER_INGESTION_TOKEN:?Set AI_WORKER_INGESTION_TOKEN in .env}
       AI_WORKER_BACKEND_TIMEOUT_SECONDS: "10"
       AI_WORKER_BACKEND_MAX_ATTEMPTS: "3"
       AI_WORKER_BACKEND_RETRY_DELAY_SECONDS: "2"
@@ -142,26 +141,37 @@ services:
     container_name: tomato_backend
     restart: unless-stopped
     environment:
-      DJANGO_SECRET_KEY: django-insecure-change-me-please-replace-this-secret
-      DJANGO_DEBUG: "True"
-      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend,traefik,10.165.218.219"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
       AI_ASSETS_DIR: /app/ai_assets
-      POSTGRES_DB: tomato_db
-      POSTGRES_USER: tomato_user
-      POSTGRES_PASSWORD: tomato_pass
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
-      AI_WORKER_INGESTION_TOKEN: tomato-ai-worker-dev-token
-      EVIDENCE_IMAGE_UPLOAD_TOKEN: tomato-evidence-upload-dev-token
-      EVIDENCE_IMAGE_COMMANDS_ENABLED: "true"
+      AI_WORKER_INGESTION_TOKEN: ${AI_WORKER_INGESTION_TOKEN:?Set AI_WORKER_INGESTION_TOKEN in .env}
+      EVIDENCE_IMAGE_UPLOAD_TOKEN: ${EVIDENCE_IMAGE_UPLOAD_TOKEN:?Set EVIDENCE_IMAGE_UPLOAD_TOKEN in .env}
+      EVIDENCE_IMAGE_COMMANDS_ENABLED: ${EVIDENCE_IMAGE_COMMANDS_ENABLED:-false}
       EVIDENCE_IMAGE_COMMAND_RABBITMQ_HOST: rabbitmq
       EVIDENCE_IMAGE_COMMAND_RABBITMQ_PORT: "5672"
-      EVIDENCE_IMAGE_COMMAND_RABBITMQ_USERNAME: tomato_mqtt
-      EVIDENCE_IMAGE_COMMAND_RABBITMQ_PASSWORD: tomato_mqtt_pass
+      EVIDENCE_IMAGE_COMMAND_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:?Set RABBITMQ_DEFAULT_USER in .env}
+      EVIDENCE_IMAGE_COMMAND_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
       EVIDENCE_IMAGE_COMMAND_RABBITMQ_VHOST: /
       EVIDENCE_IMAGE_COMMAND_EXCHANGE: amq.topic
       EVIDENCE_IMAGE_COMMAND_ROUTING_KEY_TEMPLATE: tomato.edge.v1.{device_identifier}.commands.image-request
+      EMAIL_NOTIFICATIONS_ENABLED: ${EMAIL_NOTIFICATIONS_ENABLED:-false}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-25}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-false}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Smart Eye Alerts <alerts@example.com>}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost}
+      ALERT_EMAIL_RECIPIENTS: ${ALERT_EMAIL_RECIPIENTS:-}
+      REVIEW_EMAIL_RECIPIENTS: ${REVIEW_EMAIL_RECIPIENTS:-}
     volumes:
       - ./ai_assets:/app/ai_assets
       - ./backend/media:/app/media
