@@ -398,7 +398,7 @@ export default function NotificationDashboardPanel({
             {previewReviewItems.length === 0 ? (
               <StateBlock
                 title="Review queue is clear"
-                message="Low-confidence inspections will show up here as actionable review tasks."
+                message="Inspections under 70% confidence will show up here as actionable review tasks."
                 minHeight={164}
               />
             ) : (

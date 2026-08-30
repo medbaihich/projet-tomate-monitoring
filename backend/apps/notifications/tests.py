@@ -21,6 +21,7 @@ from apps.notifications.serializers import NotificationSerializer
 from apps.notifications.services import (
     NOTIFICATIONS_GROUP_NAME,
     maybe_create_disease_alert_notification,
+    maybe_create_review_required_notification,
     schedule_dashboard_refresh_event,
 )
 
@@ -98,6 +99,7 @@ class NotificationFixtureMixin:
         processing_status=Inspection.ProcessingStatus.COMPLETED,
         organ_type=Inspection.OrganType.LEAF,
         inference_index=None,
+        confidence_score=0.91,
     ):
         now = timezone.now().replace(microsecond=0)
         active_inference_index = inference_index or self.leaf_index
@@ -110,7 +112,7 @@ class NotificationFixtureMixin:
             "processing_status": processing_status,
             "source_message_id": f"notification-test-{now.timestamp()}-{uuid4().hex}",
             "top1_label": top1_label,
-            "confidence_score": 0.91,
+            "confidence_score": confidence_score,
             "captured_at": now.isoformat(),
             "received_at": now.isoformat(),
             "processed_at": now.isoformat(),
@@ -223,6 +225,44 @@ class NotificationInspectionTriggerTests(NotificationFixtureMixin, APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Notification.objects.count(), 0)
 
+    def test_creates_review_required_notification_for_completed_inspection_under_70_confidence(self):
+        with patch("apps.notifications.services._broadcast_dashboard_refresh"):
+            response = self.client.post(
+                reverse("inspection-list"),
+                data=self.create_inspection_payload(
+                    predicted_disease=self.healthy_disease,
+                    top1_label=self.healthy_disease.name,
+                    confidence_score=0.69,
+                ),
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Notification.objects.count(), 1)
+
+        notification = Notification.objects.select_related("inspection", "disease").get()
+        self.assertEqual(notification.event_type, Notification.EventType.REVIEW_REQUIRED)
+        self.assertEqual(notification.disease, self.healthy_disease)
+        self.assertEqual(notification.severity, Notification.Severity.MEDIUM)
+        self.assertEqual(notification.confidence_score, 0.69)
+        self.assertEqual(notification.payload["review_reason"], "confidence_below_threshold")
+        self.assertEqual(notification.payload["review_threshold"], 0.70)
+        self.assertIn("below the 70% threshold", notification.message)
+
+    def test_does_not_create_review_required_notification_at_70_confidence(self):
+        response = self.client.post(
+            reverse("inspection-list"),
+            data=self.create_inspection_payload(
+                predicted_disease=self.healthy_disease,
+                top1_label=self.healthy_disease.name,
+                confidence_score=0.70,
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Notification.objects.count(), 0)
+
     def test_transition_from_non_alert_to_alert_creates_one_notification(self):
         create_response = self.client.post(
             reverse("inspection-list"),
@@ -300,6 +340,25 @@ class NotificationServiceTests(NotificationFixtureMixin, TestCase):
         self.assertTrue(first_created)
         self.assertFalse(second_created)
         self.assertEqual(first_notification.id, second_notification.id)
+        self.assertEqual(Notification.objects.count(), 1)
+
+    def test_deduplicates_same_review_required_event_for_same_inspection(self):
+        inspection = self.create_inspection_model(
+            predicted_disease=self.healthy_disease,
+            top1_label=self.healthy_disease.name,
+            confidence_score=0.42,
+        )
+
+        with patch("apps.notifications.services.transaction.on_commit", side_effect=lambda callback: callback()):
+            with patch("apps.notifications.services._broadcast_notification_by_id"):
+                with patch("apps.notifications.services._broadcast_dashboard_refresh"):
+                    first_notification, first_created = maybe_create_review_required_notification(inspection)
+                    second_notification, second_created = maybe_create_review_required_notification(inspection)
+
+        self.assertTrue(first_created)
+        self.assertFalse(second_created)
+        self.assertEqual(first_notification.id, second_notification.id)
+        self.assertEqual(first_notification.event_type, Notification.EventType.REVIEW_REQUIRED)
         self.assertEqual(Notification.objects.count(), 1)
 
     def test_notification_serializer_representation_is_json_safe(self):

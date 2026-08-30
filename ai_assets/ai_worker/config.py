@@ -9,6 +9,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _get_required(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
 def _get_int(name: str, default: int) -> int:
     raw_value = os.getenv(name)
     if raw_value is None or raw_value.strip() == "":
@@ -68,7 +75,7 @@ def load_worker_config() -> WorkerConfig:
         rabbitmq_host=os.getenv("AI_WORKER_RABBITMQ_HOST", "rabbitmq"),
         rabbitmq_port=_get_int("AI_WORKER_RABBITMQ_PORT", 5672),
         rabbitmq_username=os.getenv("AI_WORKER_RABBITMQ_USERNAME", "tomato_mqtt"),
-        rabbitmq_password=os.getenv("AI_WORKER_RABBITMQ_PASSWORD", "tomato_mqtt_pass"),
+        rabbitmq_password=_get_required("AI_WORKER_RABBITMQ_PASSWORD"),
         rabbitmq_vhost=os.getenv("AI_WORKER_RABBITMQ_VHOST", "/"),
         request_exchange=os.getenv("AI_WORKER_REQUEST_EXCHANGE", "amq.topic"),
         request_queue=os.getenv(
@@ -103,10 +110,7 @@ def load_worker_config() -> WorkerConfig:
             "AI_WORKER_BACKEND_INGESTION_URL",
             "http://backend:8000/api/v1/inspections/ingest-ai-result/",
         ),
-        backend_ingestion_token=os.getenv(
-            "AI_WORKER_BACKEND_INGESTION_TOKEN",
-            "tomato-ai-worker-dev-token",
-        ),
+        backend_ingestion_token=_get_required("AI_WORKER_BACKEND_INGESTION_TOKEN"),
         backend_timeout_seconds=_get_int(
             "AI_WORKER_BACKEND_TIMEOUT_SECONDS",
             10,

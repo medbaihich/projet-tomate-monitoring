@@ -245,7 +245,7 @@ export default function ReviewPage() {
                 diseaseMap={diseaseMap}
                 deviceMap={deviceMap}
                 emptyTitle="No low-confidence inspections waiting for review"
-                emptyMessage="All currently fetched low-confidence inspections are already reviewed, or no inspections currently meet the confidence <= 0.5 review rule."
+                emptyMessage="All currently fetched low-confidence inspections are already reviewed, or no inspections currently meet the confidence < 70% review rule."
               />
             </Grid>
 

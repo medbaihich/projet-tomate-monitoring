@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from threading import Event
 from pathlib import Path
@@ -26,7 +27,7 @@ from ai_engine.vector_inference_service import InferenceConfig, run_inference_fr
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 1883
 DEFAULT_USERNAME = "edge"
-DEFAULT_PASSWORD = "edgepass123"
+DEFAULT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
 DEFAULT_TOPIC = "tomato/edge/features"
 DEFAULT_CLIENT_ID = "pc-ai-vector-receiver"
 EXPECTED_FEATURE_DIM = 1280
@@ -63,7 +64,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--password",
         default=DEFAULT_PASSWORD,
-        help=f"MQTT password. Default: {DEFAULT_PASSWORD}",
+        required=not bool(DEFAULT_PASSWORD),
+        help="MQTT password. Set MQTT_PASSWORD or pass this option.",
     )
     parser.add_argument(
         "--topic",

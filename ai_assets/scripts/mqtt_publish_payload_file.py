@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 from threading import Event
 
@@ -14,7 +15,7 @@ except ImportError as exc:
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 1883
 DEFAULT_USERNAME = "tomato_mqtt"
-DEFAULT_PASSWORD = "tomato_mqtt_pass"
+DEFAULT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
 DEFAULT_TOPIC = "tomato/edge/v1/tomato-edge-01/feature-vector"
 DEFAULT_CLIENT_ID = "pc-payload-file-publisher"
 MQTT_KEEPALIVE_SECONDS = 60
@@ -46,7 +47,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--password",
         default=DEFAULT_PASSWORD,
-        help=f"MQTT password. Default: {DEFAULT_PASSWORD}",
+        required=not bool(DEFAULT_PASSWORD),
+        help="MQTT password. Set MQTT_PASSWORD or pass this option.",
     )
     parser.add_argument(
         "--topic",

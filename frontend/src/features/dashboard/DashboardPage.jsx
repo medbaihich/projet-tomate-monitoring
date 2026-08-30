@@ -73,8 +73,7 @@ const DEVICE_DASHBOARD_REFRESH_REASONS = new Set([
   'device.deleted',
 ]);
 const CONFIDENCE_BUCKET_LABELS = {
-  reviewable: '\u2264 50%',
-  watch: `51\u201369%`,
+  reviewable: '< 70%',
   strong: `70\u201384%`,
   high: '\u2265 85%',
 };
@@ -1265,11 +1264,11 @@ export default function DashboardPage() {
       >
         <MuiAlert
           onClose={() => setLiveAlert(null)}
-          severity="error"
+          severity={liveAlert?.event_type === 'review_required' ? 'warning' : 'error'}
           variant="filled"
           sx={{ width: '100%' }}
         >
-          {liveAlert?.title || 'New disease alert received.'}
+          {liveAlert?.title || (liveAlert?.event_type === 'review_required' ? 'New review alert received.' : 'New disease alert received.')}
         </MuiAlert>
       </Snackbar>
     </>

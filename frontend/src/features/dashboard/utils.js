@@ -1,4 +1,4 @@
-import { isInspectionReviewable } from '../review/utils.js';
+import { isInspectionReviewable, REVIEW_REQUIRED_CONFIDENCE_THRESHOLD } from '../review/utils.js';
 
 const DASHBOARD_RISK_PRIORITY = {
   critical: 4,
@@ -47,8 +47,7 @@ export function calculateAverageConfidence(inspections) {
 
 export function buildConfidenceDistribution(inspections) {
   const ranges = [
-    { label: '≤ 50%', key: 'reviewable', color: '#ffa726', predicate: (value) => value <= 0.5, count: 0 },
-    { label: '51-69%', key: 'watch', color: '#42a5f5', predicate: (value) => value > 0.5 && value < 0.7, count: 0 },
+    { label: '< 70%', key: 'reviewable', color: '#ffa726', predicate: (value) => value < REVIEW_REQUIRED_CONFIDENCE_THRESHOLD, count: 0 },
     { label: '70-84%', key: 'strong', color: '#66bb6a', predicate: (value) => value >= 0.7 && value < 0.85, count: 0 },
     { label: '≥ 85%', key: 'high', color: '#2e7d32', predicate: (value) => value >= 0.85 && value <= 1, count: 0 },
   ];
@@ -116,6 +115,10 @@ export function resolveNotificationDiseaseRecord(notification, diseases = []) {
   )) ?? null
 }
 
+export function isDiseaseAlertNotification(notification) {
+  return !notification?.event_type || notification.event_type === 'disease_alert';
+}
+
 export function resolveNotificationRiskLevel(notification, diseases = []) {
   const diseaseRecord = resolveNotificationDiseaseRecord(notification, diseases)
   const mappedRiskLevel = diseaseRecord?.map_profile?.risk_level
@@ -146,7 +149,7 @@ export function resolveNotificationAlertTimestamp(notification) {
 }
 
 export function sortDiseaseAlertsByPriority(notifications = [], diseases = []) {
-  return [...notifications].sort((left, right) => {
+  return notifications.filter(isDiseaseAlertNotification).sort((left, right) => {
     const leftUnreadPriority = left?.is_read ? 0 : 1
     const rightUnreadPriority = right?.is_read ? 0 : 1
     if (leftUnreadPriority !== rightUnreadPriority) {

@@ -206,7 +206,10 @@ class InspectionEvidenceImage(UUIDPrimaryKeyModel, TimeStampedModel):
         related_name="inspection_evidence_images",
     )
     source_message_id = models.CharField(max_length=255, db_index=True)
-    image = models.FileField(upload_to=inspection_evidence_upload_to)
+    image = models.FileField(
+        upload_to=inspection_evidence_upload_to,
+        max_length=500,
+        )
     original_filename = models.CharField(max_length=255)
     mime_type = models.CharField(max_length=255, blank=True)
     size_bytes = models.PositiveBigIntegerField()

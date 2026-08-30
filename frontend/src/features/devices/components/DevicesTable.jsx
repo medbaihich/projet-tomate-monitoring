@@ -161,18 +161,21 @@ export default function DevicesTable({
   const footerClassName = isLightMode
     ? 'rounded-xl border border-slate-200 bg-white/72 px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
     : '';
+  const stickyActionCellClassName = isLightMode
+    ? 'sticky right-0 z-10 border-l border-slate-200/90 bg-white/96'
+    : 'sticky right-0 z-10 border-l border-border/80 bg-card';
+  const stickyActionHeaderClassName = isLightMode
+    ? 'sticky right-0 z-20 border-l border-slate-200/90 bg-slate-50/95'
+    : 'sticky right-0 z-20 border-l border-border/80 bg-card';
   const columns = useMemo(
     () => [
       {
         accessorKey: 'name',
         header: ({ column }) => <SortButton column={column}>Device</SortButton>,
         cell: ({ row }) => (
-          <div className="min-w-[12rem]">
-            <div className="truncate font-semibold text-foreground">
+          <div className="max-w-[11rem]">
+            <div className="truncate text-sm font-semibold text-foreground">
               {row.original.name || <EmptyValue />}
-            </div>
-            <div className="truncate text-xs text-muted-foreground">
-              {row.original.id}
             </div>
           </div>
         ),
@@ -181,7 +184,7 @@ export default function DevicesTable({
         accessorKey: 'identifier',
         header: ({ column }) => <SortButton column={column}>Identifier</SortButton>,
         cell: ({ row }) => (
-          <span className="font-mono text-xs text-foreground">
+          <span className="block max-w-[11rem] truncate font-mono text-xs text-foreground">
             {row.original.identifier || 'N/A'}
           </span>
         ),
@@ -211,7 +214,7 @@ export default function DevicesTable({
         enableSorting: false,
         header: 'Description',
         cell: ({ row }) => (
-          <span className="line-clamp-2 max-w-[16rem] text-sm text-muted-foreground">
+          <span className="block max-w-[12rem] truncate text-sm text-muted-foreground xl:max-w-[14rem]">
             {row.original.description || 'No description'}
           </span>
         ),
@@ -230,7 +233,7 @@ export default function DevicesTable({
         enableSorting: false,
         header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => (
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex min-w-[6.75rem] items-center justify-end gap-1">
             {isAdmin ? (
               <>
                 <ActionIconButton
@@ -359,7 +362,7 @@ export default function DevicesTable({
         <DevicesTableSkeleton />
       ) : (
         <div className={tableShellClassName}>
-          <Table>
+          <Table className="min-w-full">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="hover:bg-transparent">
@@ -367,8 +370,17 @@ export default function DevicesTable({
                     <TableHead
                       key={header.id}
                       className={cn(
-                        'h-10 whitespace-nowrap px-3',
+                        'h-10 whitespace-nowrap px-2.5',
                         header.column.id === 'actions' && 'text-right',
+                        header.column.id === 'name' && 'w-[13%] min-w-[9rem]',
+                        header.column.id === 'identifier' && 'w-[14%] min-w-[9rem]',
+                        header.column.id === 'site_name' && 'w-[10%] min-w-[7rem]',
+                        header.column.id === 'greenhouse_name' && 'w-[11%] min-w-[7.5rem]',
+                        header.column.id === 'zone_name' && 'w-[10%] min-w-[7rem]',
+                        header.column.id === 'line_name' && 'w-[10%] min-w-[7rem]',
+                        header.column.id === 'description' && 'w-[17%] min-w-[9rem]',
+                        header.column.id === 'updated_at' && 'w-[11%] min-w-[8.5rem]',
+                        header.column.id === 'actions' && cn('w-[8rem] min-w-[8rem]', stickyActionHeaderClassName),
                         isLightMode && 'bg-slate-50/80 text-slate-600',
                       )}
                     >
@@ -402,7 +414,13 @@ export default function DevicesTable({
                     tabIndex={0}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="px-3 py-2.5">
+                      <TableCell
+                        key={cell.id}
+                        className={cn(
+                          'px-2.5 py-2.5',
+                          cell.column.id === 'actions' && stickyActionCellClassName,
+                        )}
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}

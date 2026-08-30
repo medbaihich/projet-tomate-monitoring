@@ -26,16 +26,16 @@ function runTest(name, callback) {
   }
 }
 
-runTest('review workflow includes unreviewed inspections with confidence 0.5', () => {
+runTest('review workflow includes unreviewed inspections below 0.7 confidence', () => {
   const reviewedInspectionIds = new Set();
 
   assert.equal(
-    isInspectionReviewable(buildInspection('inspection-1', 0.5), reviewedInspectionIds),
+    isInspectionReviewable(buildInspection('inspection-1', 0.69), reviewedInspectionIds),
     true,
   );
 });
 
-runTest('review workflow includes unreviewed inspections below 0.5 confidence', () => {
+runTest('review workflow includes unreviewed inspections with very low confidence', () => {
   const reviewedInspectionIds = new Set();
 
   assert.equal(
@@ -44,11 +44,20 @@ runTest('review workflow includes unreviewed inspections below 0.5 confidence', 
   );
 });
 
-runTest('review workflow excludes unreviewed inspections above 0.5 confidence', () => {
+runTest('review workflow excludes unreviewed inspections at 0.7 confidence', () => {
   const reviewedInspectionIds = new Set();
 
   assert.equal(
-    isInspectionReviewable(buildInspection('inspection-3', 0.82), reviewedInspectionIds),
+    isInspectionReviewable(buildInspection('inspection-3', 0.7), reviewedInspectionIds),
+    false,
+  );
+});
+
+runTest('review workflow excludes unreviewed inspections above 0.7 confidence', () => {
+  const reviewedInspectionIds = new Set();
+
+  assert.equal(
+    isInspectionReviewable(buildInspection('inspection-6', 0.82), reviewedInspectionIds),
     false,
   );
 });
@@ -95,7 +104,7 @@ runTest('average confidence excludes invalid confidence values', () => {
   assert.equal(calculateAverageConfidence(inspections), 0.65);
 });
 
-runTest('confidence distribution buckets use normalized values and include 0.5 in the low-confidence bucket', () => {
+runTest('confidence distribution buckets use normalized values and include values under 0.7 in the review bucket', () => {
   const distribution = buildConfidenceDistribution([
     buildInspection('inspection-1', 0.5),
     buildInspection('inspection-2', 0.51),
@@ -108,8 +117,7 @@ runTest('confidence distribution buckets use normalized values and include 0.5 i
   assert.deepEqual(
     distribution.map(({ key, value }) => ({ key, value })),
     [
-      { key: 'reviewable', value: 1 },
-      { key: 'watch', value: 1 },
+      { key: 'reviewable', value: 2 },
       { key: 'strong', value: 1 },
       { key: 'high', value: 1 },
     ],
@@ -118,9 +126,9 @@ runTest('confidence distribution buckets use normalized values and include 0.5 i
 
 runTest('pending review queue and count follow the low-confidence unreviewed rule', () => {
   const inspections = [
-    buildInspection('inspection-1', 0.5),
+    buildInspection('inspection-1', 0.69),
     buildInspection('inspection-2', 0.2),
-    buildInspection('inspection-3', 0.8),
+    buildInspection('inspection-3', 0.7),
     buildInspection('inspection-4', null),
     buildInspection('inspection-5', 0.3),
   ];

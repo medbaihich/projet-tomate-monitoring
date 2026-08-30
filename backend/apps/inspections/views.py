@@ -28,7 +28,9 @@ from apps.inspections.serializers import (
 )
 from apps.notifications.services import (
     is_inspection_alert_eligible,
+    is_inspection_review_required_eligible,
     maybe_create_disease_alert_notification,
+    maybe_create_review_required_notification,
 )
 
 
@@ -183,6 +185,9 @@ class InspectionViewSet(viewsets.ModelViewSet):
             .get(pk=serializer.instance.pk)
         )
         was_alert_eligible = is_inspection_alert_eligible(inspection_before_update)
+        was_review_required_eligible = is_inspection_review_required_eligible(
+            inspection_before_update
+        )
 
         inspection = serializer.save()
         inspection = (
@@ -197,6 +202,8 @@ class InspectionViewSet(viewsets.ModelViewSet):
 
         if not was_alert_eligible:
             maybe_create_disease_alert_notification(inspection)
+        if not was_review_required_eligible:
+            maybe_create_review_required_notification(inspection)
 
 
 class InspectionMatchViewSet(viewsets.ModelViewSet):

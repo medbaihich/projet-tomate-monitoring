@@ -6,6 +6,7 @@ import {
   countPendingReviewableInspections,
   isValidConfidenceScore,
 } from '@/features/dashboard/utils';
+import { REVIEW_REQUIRED_CONFIDENCE_THRESHOLD } from '@/features/review/utils';
 
 export const DASHBOARD_OPERATIONS_QUERY_KEY = ['dashboard-operations'];
 
@@ -77,7 +78,7 @@ function buildHighlights(summary) {
     highlights.push({
       tone: 'warning',
       title: 'Review workload pending',
-      message: `${summary.pendingReviewCount} low-confidence inspections are currently eligible for review.`,
+      message: `${summary.pendingReviewCount} inspections under 70% confidence are currently eligible for review.`,
     });
   }
 
@@ -198,7 +199,10 @@ export async function fetchDashboardData() {
   const reviewedInspectionIds = new Set(allReviews.map((review) => review.inspection));
   const eligibleInspectionIds = new Set(
     allInspections
-      .filter((inspection) => isValidConfidenceScore(inspection.confidence_score) && inspection.confidence_score <= 0.5)
+      .filter((inspection) => (
+        isValidConfidenceScore(inspection.confidence_score)
+        && inspection.confidence_score < REVIEW_REQUIRED_CONFIDENCE_THRESHOLD
+      ))
       .map((inspection) => inspection.id),
   );
   const reviewedEligibleInspectionCount = allReviews.filter((review) => eligibleInspectionIds.has(review.inspection)).length;

@@ -10,6 +10,7 @@ from apps.inspections.models import Inspection
 class Notification(UUIDPrimaryKeyModel, TimeStampedModel):
     class EventType(models.TextChoices):
         DISEASE_ALERT = "disease_alert", "Disease Alert"
+        REVIEW_REQUIRED = "review_required", "Review Required"
 
     class Severity(models.TextChoices):
         LOW = "low", "Low"
