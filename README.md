@@ -102,7 +102,7 @@ The objective is to create a complete monitoring architecture capable of connect
 
 The system must therefore handle the entire lifecycle of an inspection:
 
-```text
+````text
 Image acquisition
         |
         v
